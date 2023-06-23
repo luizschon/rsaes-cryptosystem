@@ -15,9 +15,9 @@ CC = gcc
 CFLAGS = -std=c99 -I$(INCLUDE_D)
 LIBS = -lgmp
 
-all: release
+all: debug
 
-release: CFLAGS += -DNDEBUG -O2
+release: CFLAGS += -DNDEBUG=1 -O2
 release: $(BIN)
 
 debug: CFLAGS += -g -Wall -Wformat -Wpedantic -fno-omit-frame-pointer
