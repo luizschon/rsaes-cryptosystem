@@ -15,7 +15,12 @@
  * to the FIPS 197 (https://csrc.nist.gov/publications/detail/fips/197/final).
  */
 
-typedef struct { uint32_t words[4]; } aes_block_t;
+typedef struct { 
+  union {
+    uint8_t bytes[4][4];
+    uint32_t words[4];
+  };
+} aes_block_t;
 
 // Local variable declarations
 const uint32_t Rcon[10] = { 0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80, 0x1b, 0x36 };
@@ -38,7 +43,7 @@ const uint8_t SBox[16][16] = {
     {0xe1, 0xf8, 0x98, 0x11, 0x69, 0xd9, 0x8e, 0x94, 0x9b, 0x1e, 0x87, 0xe9, 0xce, 0x55, 0x28, 0xdf},
     {0x8c, 0xa1, 0x89, 0x0d, 0xbf, 0xe6, 0x42, 0x68, 0x41, 0x99, 0x2d, 0x0f, 0xb0, 0x54, 0xbb, 0x16}};
 
-const uint8_t inv_sbox[16][16] = {
+const uint8_t InvSbox[16][16] = {
     {0x52, 0x09, 0x6a, 0xd5, 0x30, 0x36, 0xa5, 0x38, 0xbf, 0x40, 0xa3, 0x9e, 0x81, 0xf3, 0xd7, 0xfb},
     {0x7c, 0xe3, 0x39, 0x82, 0x9b, 0x2f, 0xff, 0x87, 0x34, 0x8e, 0x43, 0x44, 0xc4, 0xde, 0xe9, 0xcb},
     {0x54, 0x7b, 0x94, 0x32, 0xa6, 0xc2, 0x23, 0x3d, 0xee, 0x4c, 0x95, 0x0b, 0x42, 0xfa, 0xc3, 0x4e},
@@ -101,12 +106,12 @@ void aes_128_encrypt(const uint8_t* m, uint8_t* c, const size_t msg_len, const u
   memcpy(blocks, m, msg_len);
 
 #ifndef NDEBUG
-  printf("Message: ");
+  printf("Message: \n");
   for (size_t i = 0; i < msg_len; i++) {
     printf("0x%02x ", m[i]);
   }
-  printf("\n");
-  printf("Blocks (len = %lu):\n", n_blocks);
+  printf("\n\n");
+  printf("Blocks as words (len = %lu):\n", n_blocks);
   printf("[\n");
   for (size_t i = 0; i < n_blocks; i++) {
     printf("  [ ");
@@ -115,7 +120,21 @@ void aes_128_encrypt(const uint8_t* m, uint8_t* c, const size_t msg_len, const u
     }
     printf("]\n");
   }
-  printf("]\n");
+  printf("]\n\n");
+  printf("Blocks as bytes (len = %lu):\n", n_blocks);
+  printf("[\n");
+  for (size_t b = 0; b < n_blocks; b++) {
+    printf("  [\n");
+    for (size_t i = 0; i < 4; i++) {
+      printf("    [ ");
+      for (size_t j = 0; j < 4; j++) {
+        printf("0x%02x ", blocks[i].bytes[i][j]);
+      }
+    printf("]\n");
+    }
+    printf("  ]\n");
+  }
+  printf("]\n\n");
 #endif 
 
   // Cipher every block
@@ -210,6 +229,21 @@ static void shift_rows(aes_block_t* state) {
 
 static void mix_columns(aes_block_t* state) {
   // TODO gmul
+  aes_block_t temp_state;
+  memcpy(&temp_state, state, sizeof(aes_block_t));
+  uint32_t fixed_matrix_row = 0x01010302;
+
+  printf("Teste gmul 0x57 . 0x13 = 0x%02x\n", gmul(0x57, 0x13));
+  
+  for (size_t c = 0; c < 4; c++) {
+    for (size_t r = 0; r < 4; r++) {
+      // state->words[r] =
+      //   compute_byte(state->words[0] >> c*BYTE_LEN, fixed_matrix_row) |
+      //   compute_byte(state->words[1] >> c*BYTE_LEN, fixed_matrix_row >> 1*BYTE_LEN) << 1*BYTE_LEN |
+      //   compute_byte(state->words[2] >> c*BYTE_LEN, fixed_matrix_row >> 2*BYTE_LEN) << 2*BYTE_LEN |
+      //   compute_byte(state->words[3] >> c*BYTE_LEN, fixed_matrix_row >> 3*BYTE_LEN) << 3*BYTE_LEN;
+    }
+  }
 }
 
 static uint32_t rot_word(uint32_t word, const int times) {
