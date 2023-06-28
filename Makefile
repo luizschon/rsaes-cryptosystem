@@ -12,7 +12,7 @@ ZNAME = Trabalho2_SegComp_2023-1.zip
 ZIGNORE = ./$(BUILD_D)/\* 
 
 CC = gcc
-CFLAGS = -std=c99 -I$(INCLUDE_D)
+CFLAGS = -std=c11 -I$(INCLUDE_D)
 LIBS = -lgmp
 
 all: debug
