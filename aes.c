@@ -17,15 +17,15 @@
 
 typedef struct { 
   union {
-    uint8_t bytes[4][4];
-    uint32_t words[4];
+    u8 bytes[4][4];
+    u32 words[4];
   };
 } aes_block_t;
 
 // Local variable declarations
-const uint32_t Rcon[10] = { 0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80, 0x1b, 0x36 };
+const u32 Rcon[10] = { 0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80, 0x1b, 0x36 };
 
-const uint8_t SBox[16][16] = {
+const u8 SBox[16][16] = {
     {0x63, 0x7c, 0x77, 0x7b, 0xf2, 0x6b, 0x6f, 0xc5, 0x30, 0x01, 0x67, 0x2b, 0xfe, 0xd7, 0xab, 0x76},
     {0xca, 0x82, 0xc9, 0x7d, 0xfa, 0x59, 0x47, 0xf0, 0xad, 0xd4, 0xa2, 0xaf, 0x9c, 0xa4, 0x72, 0xc0},
     {0xb7, 0xfd, 0x93, 0x26, 0x36, 0x3f, 0xf7, 0xcc, 0x34, 0xa5, 0xe5, 0xf1, 0x71, 0xd8, 0x31, 0x15},
@@ -43,7 +43,7 @@ const uint8_t SBox[16][16] = {
     {0xe1, 0xf8, 0x98, 0x11, 0x69, 0xd9, 0x8e, 0x94, 0x9b, 0x1e, 0x87, 0xe9, 0xce, 0x55, 0x28, 0xdf},
     {0x8c, 0xa1, 0x89, 0x0d, 0xbf, 0xe6, 0x42, 0x68, 0x41, 0x99, 0x2d, 0x0f, 0xb0, 0x54, 0xbb, 0x16}};
 
-const uint8_t InvSbox[16][16] = {
+const u8 InvSbox[16][16] = {
     {0x52, 0x09, 0x6a, 0xd5, 0x30, 0x36, 0xa5, 0x38, 0xbf, 0x40, 0xa3, 0x9e, 0x81, 0xf3, 0xd7, 0xfb},
     {0x7c, 0xe3, 0x39, 0x82, 0x9b, 0x2f, 0xff, 0x87, 0x34, 0x8e, 0x43, 0x44, 0xc4, 0xde, 0xe9, 0xcb},
     {0x54, 0x7b, 0x94, 0x32, 0xa6, 0xc2, 0x23, 0x3d, 0xee, 0x4c, 0x95, 0x0b, 0x42, 0xfa, 0xc3, 0x4e},
@@ -62,22 +62,28 @@ const uint8_t InvSbox[16][16] = {
     {0x17, 0x2b, 0x04, 0x7e, 0xba, 0x77, 0xd6, 0x26, 0xe1, 0x69, 0x14, 0x63, 0x55, 0x21, 0x0c, 0x7d}};
 
 #ifndef NDEBUG
-const uint8_t test_k[AES_128_KEY_LEN] = { 0x2b, 0x7e, 0x15, 0x16, 0x28, 0xae, 0xd2, 0xa6, 0xab, 0xf7, 0x15, 0x88, 0x09, 0xcf, 0x4f, 0x3c };
+const u8 test_k[AES_128_KEY_LEN] = { 0x2b, 0x7e, 0x15, 0x16, 0x28, 0xae, 0xd2, 0xa6, 0xab, 0xf7, 0x15, 0x88, 0x09, 0xcf, 0x4f, 0x3c };
 #endif
 
 // Private functions declarations
-static void cipher(const aes_block_t* in, aes_block_t* out, const int n_rnds, const uint32_t *rnd_key);
-static void key_expansion(const uint8_t* k, uint32_t* w, const int n_rnds);
+static void cipher(const aes_block_t* in, aes_block_t* out, const int n_rnds, const u32 *rnd_key);
+static void key_expansion(const u8* k, u32* w, const int n_rnds);
 static void add_round_key(aes_block_t* state, const uint32_t* round_key);
-static uint32_t sub_word(uint32_t word);
-static uint32_t rot_word(uint32_t word, const int times);
+static u32 sub_word(u32 word);
+static u32 rot_word(u32 word, const int times);
 static void sub_bytes(aes_block_t* state);
 static void shift_rows(aes_block_t* state);
 static void mix_columns(aes_block_t* state);
-static uint8_t gmul(uint8_t a, uint8_t b);
+static u8 gmul(u8 a, u8 b);
+
+#ifndef NDEBUG
+static void print_state(const aes_block_t* state);
+static void print_bytes(const u8* bytes, const size_t len);
+static void print_words(const u32* words, const size_t len);
+#endif
 
 // Function bodies
-void aes_128_gen_key(uint8_t* k) {
+void aes_128_gen_key(u8* k) {
 #ifndef NDEBUG
   memcpy(k, test_k, AES_128_KEY_LEN);
 #else
@@ -87,9 +93,9 @@ void aes_128_gen_key(uint8_t* k) {
 #endif
 }
 
-void aes_128_encrypt(const uint8_t* m, uint8_t* c, const size_t msg_len, const uint8_t* k) {
+void aes_128_encrypt(const u8* m, u8* c, const size_t msg_len, const u8* k) {
   // Expand key
-  uint32_t expanded_k[4*(AES_128_N_RNDS+1)];
+  u32 expanded_k[4*(AES_128_N_RNDS+1)];
   key_expansion(k, expanded_k, AES_128_N_RNDS);
 
   bool should_add_padded_block = (msg_len % sizeof(aes_block_t) > 0);
@@ -107,34 +113,14 @@ void aes_128_encrypt(const uint8_t* m, uint8_t* c, const size_t msg_len, const u
 
 #ifndef NDEBUG
   printf("Message: \n");
-  for (size_t i = 0; i < msg_len; i++) {
-    printf("0x%02x ", m[i]);
-  }
-  printf("\n\n");
-  printf("Blocks as words (len = %lu):\n", n_blocks);
-  printf("[\n");
-  for (size_t i = 0; i < n_blocks; i++) {
-    printf("  [ ");
-    for (size_t j = 0; j < sizeof(blocks)/sizeof(blocks[0]); j++) {
-      printf("0x%08x ", blocks[i].words[j]);
-    }
-    printf("]\n");
-  }
-  printf("]\n\n");
+  print_bytes(m, msg_len);
+  printf("\n");
   printf("Blocks as bytes (len = %lu):\n", n_blocks);
-  printf("[\n");
   for (size_t b = 0; b < n_blocks; b++) {
-    printf("  [\n");
-    for (size_t i = 0; i < 4; i++) {
-      printf("    [ ");
-      for (size_t j = 0; j < 4; j++) {
-        printf("0x%02x ", blocks[i].bytes[i][j]);
-      }
-    printf("]\n");
-    }
-    printf("  ]\n");
+    print_state(&blocks[b]);
+    printf("\n");
   }
-  printf("]\n\n");
+  printf("END OF BLOCKS\n\n");
 #endif 
 
   // Cipher every block
@@ -143,13 +129,13 @@ void aes_128_encrypt(const uint8_t* m, uint8_t* c, const size_t msg_len, const u
   }
 }
 
-void aes_128_decrypt(const uint8_t* c, uint8_t* m, const uint8_t* k) {
+void aes_128_decrypt(const u8* c, u8* m, const u8* k) {
   
 }
 
 // Private function bodies
 
-static void cipher(const aes_block_t* in, aes_block_t* state, const int n_rnds, const uint32_t* expanded_key) {
+static void cipher(const aes_block_t* in, aes_block_t* state, const int n_rnds, const u32* expanded_key) {
   memcpy(state, in, sizeof(aes_block_t));
 
   add_round_key(state, expanded_key);
@@ -163,22 +149,18 @@ static void cipher(const aes_block_t* in, aes_block_t* state, const int n_rnds, 
   }
   
 #ifndef NDEBUG
-  printf("IN: ");
-  for (size_t i = 0; i < AES_128_BLK_LEN_W; i++) {
-    printf("0x%08x ", in->words[i]);
-  }
-  printf("\n\n");
-  printf("OUT: ");
-  for (size_t i = 0; i < AES_128_BLK_LEN_W; i++) {
-    printf("0x%08x ", state->words[i]);
-  }
-  printf("\n\n");
+  printf("IN:\n");
+  print_state(in);
+  printf("\n");
+  printf("OUT:\n");
+  print_state(state);
+  printf("\n");
 #endif
 }
 
-static void key_expansion(const uint8_t* k, uint32_t* w, const int n_rnds) {
+static void key_expansion(const u8* k, u32* w, const int n_rnds) {
   // Cast key to array of words to facilitate copy
-  uint32_t *k_as_words = (uint32_t *) k;
+  u32 *k_as_words = (u32 *) k;
   size_t i = 0;
   const int Nk = AES_128_KEY_LEN/WORD_LEN;
 
@@ -199,55 +181,75 @@ static void key_expansion(const uint8_t* k, uint32_t* w, const int n_rnds) {
   
 #ifndef NDEBUG
   printf("Key bytes:\n");
-  for (int i = 0; i < AES_128_KEY_LEN; i++)
-    printf("0x%02x ", k[i]);
-  printf("\n\n");
+  print_bytes(k, AES_128_KEY_LEN);
+  printf("\n");
   printf("Expanded key words:\n");
-  for (int i = 0; i < 4*(AES_128_N_RNDS+1); i++)
-    printf("0x%08x ", w[i]);
+  print_words(w, 4*(AES_128_N_RNDS+1));
   printf("\n");
 #endif
 }
 
-static void add_round_key(aes_block_t* state, const uint32_t* round_key) {
+static void add_round_key(aes_block_t* state, const u32* round_key) {
   for (size_t i = 0; i < 4; i++) {
     state->words[i] ^= round_key[i];
   }
+
+#ifndef NDEBUG
+  printf("Round key value:\n");
+  print_words(round_key, 4);
+  printf("\n");
+#endif
 }
 
 static void sub_bytes(aes_block_t* state) {
   for (size_t i = 0; i < 4; i++) {
-    sub_word(&(state->words[i]));
+    state->words[i] = sub_word(state->words[i]);
   }
+
+#ifndef NDEBUG
+  printf("After sub bytes:\n");
+  print_state(state);
+  printf("\n");
+#endif
 }
 
 static void shift_rows(aes_block_t* state) {
   for (size_t i = 1; i < 4; i++) {
     state->words[i] = rot_word(state->words[i], i);
   }
+
+#ifndef NDEBUG
+  printf("After shift rows:\n");
+  print_state(state);
+  printf("\n");
+#endif
 }
 
 static void mix_columns(aes_block_t* state) {
-  // TODO gmul
-  aes_block_t temp_state;
-  memcpy(&temp_state, state, sizeof(aes_block_t));
-  uint32_t fixed_matrix_row = 0x01010302;
+  u8 column[4];
+  // Copy original state because it will be modified
+  aes_block_t original_state;
+  memcpy(&original_state, state, sizeof(aes_block_t));
 
-  printf("Teste gmul 0x57 . 0x13 = 0x%02x\n", gmul(0x57, 0x13));
-  
-  for (size_t c = 0; c < 4; c++) {
-    for (size_t r = 0; r < 4; r++) {
-      // state->words[r] =
-      //   compute_byte(state->words[0] >> c*BYTE_LEN, fixed_matrix_row) |
-      //   compute_byte(state->words[1] >> c*BYTE_LEN, fixed_matrix_row >> 1*BYTE_LEN) << 1*BYTE_LEN |
-      //   compute_byte(state->words[2] >> c*BYTE_LEN, fixed_matrix_row >> 2*BYTE_LEN) << 2*BYTE_LEN |
-      //   compute_byte(state->words[3] >> c*BYTE_LEN, fixed_matrix_row >> 3*BYTE_LEN) << 3*BYTE_LEN;
+  for (size_t j = 0; j < 4; j++) {
+    for (size_t i = 0; i < 4; i++) {
+      column[i] = original_state.bytes[i][j];
     }
+    state->bytes[0][j] = gmul(0x02, column[0]) ^ gmul(0x03, column[1]) ^ column[2] ^ column[3];
+    state->bytes[1][j] = column[0] ^ gmul(0x02, column[1]) ^ gmul(0x02, column[2]) ^ column[3];
+    state->bytes[2][j] = column[0] ^ column[1] ^ gmul(0x02, column[2]) ^ gmul(0x03, column[3]);
+    state->bytes[3][j] = gmul(0x03, column[0]) ^ column[1] ^ column[2] ^ gmul(0x02, column[3]);
   }
+
+#ifndef NDEBUG
+  printf("After mix columns:\n");
+  print_state(state);
+  printf("\n");
+#endif
 }
 
-static uint32_t rot_word(uint32_t word, const int times) {
-  uint32_t temp;
+static u32 rot_word(u32 word, const int times) {
+  u32 temp;
   
   for (size_t i = 0; i < times; i++) {
       temp = word;
@@ -256,15 +258,15 @@ static uint32_t rot_word(uint32_t word, const int times) {
   }
   
 #ifndef NDEBUG
-  printf("After RotWord %d times: 0x%08x\n", times, word);
+  printf("After rot word %d times: %08x\n", times, word);
 #endif
 
   return word;
 }
 
-static uint32_t sub_word(uint32_t word) {
-  uint8_t* word_bytes = (uint8_t *) &word;
-  uint32_t ret_word = 0;
+static u32 sub_word(u32 word) {
+  u8* word_bytes = (u8 *) &word;
+  u32 ret_word = 0;
 
   for (size_t i = 0; i < WORD_LEN; i++) {
     uint8_t x_nibble = word_bytes[i] >> NIBBLE_LEN,
@@ -273,24 +275,24 @@ static uint32_t sub_word(uint32_t word) {
   }
 
 #ifndef NDEBUG
-  printf("After SubWord: 0x%08x\n", ret_word);
+  printf("After sub word: %08x\n", ret_word);
 #endif
   
   return ret_word;
 }
 
-static uint8_t gmul(uint8_t a, uint8_t b) {
-  uint8_t res = 0;
+static u8 gmul(u8 a, u8 b) {
+  u8 res = 0;
 
   // Iterate over the bits that compose b aplying the repeated xTimes() technique, see
   // equation 4.6 in the reference
   while (b) {
-    if (b & 0b01) {
-      res = res ^ a;
+    if (b & 0x01) {
+      res ^= a;
     }
     // xTimes() definition , see equation 4.5 of the reference
     if (a & 0x80) {
-      a = (a << 1) ^ 0b00011011;
+      a = (a << 1) ^ 0x01;
     } else {
       a = a << 1;
     }
@@ -299,3 +301,28 @@ static uint8_t gmul(uint8_t a, uint8_t b) {
 
   return res;
 }
+
+#ifndef NDEBUG
+static void print_state(const aes_block_t* state) {
+  for (size_t i = 0; i < 4; i++) {
+    for (size_t j = 0; j < 4; j++) {
+      printf("%02x ", state->bytes[i][j]);
+    }  
+    printf("\n");
+  }  
+}
+
+static void print_bytes(const u8* bytes, const size_t len) {
+  for (size_t i = 0; i < len; i++) {
+    printf("%02x ", bytes[i]);
+  }
+  printf("\n");
+}
+ 
+static void print_words(const u32* words, const size_t len) {
+  for (size_t i = 0; i < len; i++) {
+    printf("%08x ", words[i]);
+  }
+  printf("\n");
+}
+#endif
