@@ -2,12 +2,12 @@
 #define __AES_H
 
 #include <stddef.h> // For size_t
-#include <stdint.h>
+#include "common.h"
 
 #define AES_128_KEY_LEN 16
 
-void aes_128_gen_key(uint8_t*);
-void aes_128_encrypt(const uint8_t*, uint8_t*, const size_t, const uint8_t*);
-void aes_128_decrypt(const uint8_t*, uint8_t*, const uint8_t*);
+void aes_128_gen_key(u8*);
+void aes_128_encrypt(const u8*, u8*, const size_t, const u8*);
+void aes_128_decrypt(const u8*, u8*, const u8*);
 
 #endif // __AES_H
