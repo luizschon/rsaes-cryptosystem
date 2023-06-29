@@ -70,9 +70,11 @@ static void cipher(const aes_block_t* in, aes_block_t* out, const int n_rnds, co
 static void key_expansion(const u8* k, u32* w, const int n_rnds);
 static void add_round_key(aes_block_t* state, const uint32_t* round_key);
 static u32 sub_word(u32 word);
+static u32 inv_sub_word(u32 word);
 static u32 rot_word(u32 word, const int times);
 static void sub_bytes(aes_block_t* state);
 static void shift_rows(aes_block_t* state);
+static void inv_shift_rows(aes_block_t* state);
 static void mix_columns(aes_block_t* state);
 static u8 gmul(u8 a, u8 b);
 
@@ -107,7 +109,7 @@ void aes_128_encrypt(const u8* m, u8* c, const size_t msg_len, const u8* k) {
   if (should_add_padded_block) {
     memset(&blocks[n_blocks-1], 0, sizeof(aes_block_t)); // Clear last block (for padding with 0s)
   }
-  
+
   // Insert message bytes into the blocks
   memcpy(blocks, m, msg_len);
 
@@ -225,6 +227,18 @@ static void shift_rows(aes_block_t* state) {
 #endif
 }
 
+static void inv_shift_rows(aes_block_t* state) {
+  for (size_t i = 1; i < 4; i++) {
+    state->words[i] = rot_word(state->words[i], i);
+  }
+
+#ifndef NDEBUG
+  printf("After shift rows:\n");
+  print_state(state);
+  printf("\n");
+#endif
+}
+
 static void mix_columns(aes_block_t* state) {
   u8 column[4];
   // Copy original state because it will be modified
@@ -250,11 +264,27 @@ static void mix_columns(aes_block_t* state) {
 
 static u32 rot_word(u32 word, const int times) {
   u32 temp;
-  
+
   for (size_t i = 0; i < times; i++) {
       temp = word;
       word = word >> BYTE_LEN;
       word = word | (temp & 0xFF) << (3*BYTE_LEN);
+  }
+  
+#ifndef NDEBUG
+  printf("After rot word %d times: %08x\n", times, word);
+#endif
+
+  return word;
+}
+
+static u32 inv_rot_word(u32 word, const int times) {
+  u32 temp;
+
+  for (size_t i = 0; i < times; i++) {
+      temp = word;
+      word = word << BYTE_LEN;
+      word = word | (temp & 0xFF) >> (3*BYTE_LEN);
   }
   
 #ifndef NDEBUG
@@ -272,6 +302,23 @@ static u32 sub_word(u32 word) {
     uint8_t x_nibble = word_bytes[i] >> NIBBLE_LEN,
             y_nibble = word_bytes[i] & 0x0F;
     ret_word |= SBox[x_nibble][y_nibble] << (i*BYTE_LEN); 
+  }
+
+#ifndef NDEBUG
+  printf("After sub word: %08x\n", ret_word);
+#endif
+  
+  return ret_word;
+}
+
+static u32 inv_sub_word(u32 word) {
+  u8* word_bytes = (u8 *) &word;
+  u32 ret_word = 0;
+
+  for (size_t i = 0; i < WORD_LEN; i++) {
+    uint8_t x_nibble = word_bytes[i] >> NIBBLE_LEN,
+            y_nibble = word_bytes[i] & 0x0F;
+    ret_word |= InvSbox[x_nibble][y_nibble] << (i*BYTE_LEN); 
   }
 
 #ifndef NDEBUG
