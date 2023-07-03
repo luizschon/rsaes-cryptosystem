@@ -98,7 +98,7 @@ aes_ctx_t* aes_128_ctx_init(aes_key_t key) {
   print_bytes(key, AES_128_KEY_LEN);
   printf("\n");
   printf("Expanded key: ");
-  print_words(context->expanded_key, sizeof(context->expanded_key));
+  print_words(context->expanded_key, sizeof(context->expanded_key) / WORD_LEN);
   printf("\n");
   printf("Nonce: ");
   print_bytes((u8*) &(context->nonce), sizeof(context->nonce));
