@@ -19,7 +19,7 @@ typedef struct {
     u8 bytes[4][4];
     u32 words[4];
   };
-} aes_state_t;
+} aes_block_t;
 
 typedef struct {
   u32 expanded_key[AES_128_EXPKEY_LEN];

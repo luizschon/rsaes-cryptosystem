@@ -61,26 +61,26 @@ const u8 nonce[4] = { 0x00, 0xE0, 0x01, 0x7B };
 #endif
 
 // Private functions declarations
-static void init_counter_block(aes_state_t* counter_block, aes_ctx_t* context);
-static void cipher(aes_state_t* state, const int n_rnds, u32* expanded_key);
+static void init_counter_block(aes_block_t* counter_block, aes_ctx_t* context);
+static void cipher(aes_block_t* state, const int n_rnds, u32* expanded_key);
 static void key_expansion(const u8* k, u32* w, const int n_rnds);
-static void add_round_key(aes_state_t* state, const uint32_t* round_key);
+static void add_round_key(aes_block_t* state, const uint32_t* round_key);
 static u32 sub_word(u32 word);
 static u32 inv_sub_word(u32 word);
 static u32 rot_word(u32 word, const int times);
-static void sub_bytes(aes_state_t* state);
-static void shift_rows(aes_state_t* state);
-static void inv_shift_rows(aes_state_t* state);
-static void mix_columns(aes_state_t* state);
-static void increment_counter(aes_state_t* counter_block);
+static void sub_bytes(aes_block_t* state);
+static void shift_rows(aes_block_t* state);
+static void inv_shift_rows(aes_block_t* state);
+static void mix_columns(aes_block_t* state);
+static void increment_counter(aes_block_t* counter_block);
 static u8 gmul(u8 a, u8 b);
-static void xor_block_into_bytes(u8* bytes, const aes_state_t* state);
-static void xor_bytes_into_block(aes_state_t* state, const u8* bytes);
+static void xor_block_into_bytes(u8* bytes, const aes_block_t* state);
+static void xor_bytes_into_block(aes_block_t* state, const u8* bytes);
 static void gen_rand_bytes(u8* dest, size_t len);
-static void bytes_to_block(aes_state_t* state, const u8* bytes);
+static void bytes_to_block(aes_block_t* state, const u8* bytes);
 
 #ifndef NDEBUG
-static void print_state(const aes_state_t* state);
+static void print_state(const aes_block_t* state);
 static void print_bytes(const u8* bytes, const size_t len);
 static void print_words(const u32* words, const size_t len);
 #endif
@@ -144,18 +144,18 @@ void aes_128_encrypt(aes_ctx_t* context, const u8* input, size_t len) {
 #endif
 
   // Initialize counter block using nonce, initialization vector and counter
-  aes_state_t ctr_block;
+  aes_block_t ctr_block;
   init_counter_block(&ctr_block, context);
 
   // Compute number of blocks to be ciphered
-  u32 last_block_len = (len % sizeof(aes_state_t) > 0);
-  size_t n_blocks = len/sizeof(aes_state_t); // Insert truncaded number of blocks
+  u32 last_block_len = (len % sizeof(aes_block_t) > 0);
+  size_t n_blocks = len/sizeof(aes_block_t); // Insert truncaded number of blocks
   n_blocks += (last_block_len > 0);          // If m does not fit perfectly in the blocks
                                              // add another block with padding
 
   // Copy input into output to facilitate XOR operations with the cipher result
   if (context->output == NULL) {
-    context->output = calloc(n_blocks * sizeof(aes_state_t), sizeof(u8));
+    context->output = calloc(n_blocks * sizeof(aes_block_t), sizeof(u8));
   }
 
   if (context->output == NULL) {
@@ -166,14 +166,14 @@ void aes_128_encrypt(aes_ctx_t* context, const u8* input, size_t len) {
   context->out_len = len;
   
   // Operate over every block except the last, because it may need to be truncated
-  aes_state_t res; 
+  aes_block_t res; 
   size_t block_idx = 0;
   for (size_t i = 0; i < n_blocks; i++) {
     res = ctr_block;
     cipher(&res, AES_128_N_RNDS, context->expanded_key);
     xor_block_into_bytes(&(context->output[block_idx]), &res);
     increment_counter(&ctr_block);
-    block_idx += sizeof(aes_state_t);
+    block_idx += sizeof(aes_block_t);
 #ifndef NDEBUG
     printf("Counter block (%ld):\n", i+1);
     print_state(&ctr_block);
@@ -198,7 +198,7 @@ void aes_128_decrypt(aes_ctx_t* context, const u8* input, size_t len) {
 
 // Private function bodies
 
-static void init_counter_block(aes_state_t* counter_block, aes_ctx_t* context) {
+static void init_counter_block(aes_block_t* counter_block, aes_ctx_t* context) {
   /* Inserts bytes into the block according to the following diagram, where nonce and counter
    * are a 32 bit value and the initialization vector is a 64 bit value:
    * 
@@ -218,7 +218,7 @@ static void init_counter_block(aes_state_t* counter_block, aes_ctx_t* context) {
    * but our target architecture (x86 LSB-first) encodes memory in little-endian. This means 
    * that we need to initialize and operate on our counter MSB-first to comply with the RFC
    * used as reference. */
-  u32 counter_block_words[sizeof(aes_state_t) / sizeof(u32)];
+  u32 counter_block_words[sizeof(aes_block_t) / sizeof(u32)];
   counter_block_words[0] = context->nonce;
   counter_block_words[1] = context->iv & 0xFFFFFFFF;
   counter_block_words[2] = context->iv >> 32;
@@ -226,7 +226,7 @@ static void init_counter_block(aes_state_t* counter_block, aes_ctx_t* context) {
   bytes_to_block(counter_block, (u8*) counter_block_words);
 }
 
-static void cipher(aes_state_t* state, const int n_rnds, u32* expanded_key) {
+static void cipher(aes_block_t* state, const int n_rnds, u32* expanded_key) {
   add_round_key(state, expanded_key);
 
   for (size_t i = 1; i < n_rnds; i++) {
@@ -269,34 +269,34 @@ static void key_expansion(const u8* k, u32* w, const int n_rnds) {
   }
 }
 
-static void add_round_key(aes_state_t* state, const u32* round_key) {
+static void add_round_key(aes_block_t* state, const u32* round_key) {
   const u8* round_key_bytes = (u8*) round_key;
   xor_bytes_into_block(state, round_key_bytes);
 }
 
-static void sub_bytes(aes_state_t* state) {
+static void sub_bytes(aes_block_t* state) {
   for (size_t i = 0; i < 4; i++) {
     state->words[i] = sub_word(state->words[i]);
   }
 }
 
-static void shift_rows(aes_state_t* state) {
+static void shift_rows(aes_block_t* state) {
   for (size_t i = 1; i < 4; i++) {
     state->words[i] = rot_word(state->words[i], i);
   }
 }
 
-static void inv_shift_rows(aes_state_t* state) {
+static void inv_shift_rows(aes_block_t* state) {
   for (size_t i = 1; i < 4; i++) {
     state->words[i] = rot_word(state->words[i], i);
   }
 }
 
-static void mix_columns(aes_state_t* state) {
+static void mix_columns(aes_block_t* state) {
   u8 column[4];
   // Copy original state because it will be modified
-  aes_state_t original_state;
-  memcpy(&original_state, state, sizeof(aes_state_t));
+  aes_block_t original_state;
+  memcpy(&original_state, state, sizeof(aes_block_t));
 
   for (size_t j = 0; j < 4; j++) {
     for (size_t i = 0; i < 4; i++) {
@@ -309,7 +309,7 @@ static void mix_columns(aes_state_t* state) {
   }
 }
 
-static void increment_counter(aes_state_t* counter_block) {
+static void increment_counter(aes_block_t* counter_block) {
   /* The last column of the block represets our counter:
    *
    * +----+----+----+======+
@@ -397,7 +397,7 @@ static u8 gmul(u8 a, u8 b) {
   return res;
 }
 
-static void xor_block_into_bytes(u8* bytes, const aes_state_t* state) {
+static void xor_block_into_bytes(u8* bytes, const aes_block_t* state) {
   size_t bcounter = 0;
   for (size_t i = 0; i < 4; i++) {
     for (size_t j = 0; j < 4; j++) {
@@ -406,7 +406,7 @@ static void xor_block_into_bytes(u8* bytes, const aes_state_t* state) {
   }
 }
 
-static void xor_bytes_into_block(aes_state_t* state, const u8* bytes) {
+static void xor_bytes_into_block(aes_block_t* state, const u8* bytes) {
   size_t bcounter = 0;
   for (size_t i = 0; i < 4; i++) {
     for (size_t j = 0; j < 4; j++) {
@@ -421,7 +421,7 @@ static void gen_rand_bytes(u8* dest, size_t len) {
   }
 }
 
-static void bytes_to_block(aes_state_t* state, const u8* bytes) {
+static void bytes_to_block(aes_block_t* state, const u8* bytes) {
   size_t bcounter = 0;
   for (size_t i = 0; i < 4; i++) {
     for (size_t j = 0; j < 4; j++) {
@@ -431,7 +431,7 @@ static void bytes_to_block(aes_state_t* state, const u8* bytes) {
 }
 
 #ifndef NDEBUG
-static void print_state(const aes_state_t* state) {
+static void print_state(const aes_block_t* state) {
   for (size_t i = 0; i < 4; i++) {
     for (size_t j = 0; j < 4; j++) {
       printf("%02x ", state->bytes[i][j]);
