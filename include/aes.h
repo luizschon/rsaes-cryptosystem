@@ -22,15 +22,17 @@ typedef struct {
 } aes_state_t;
 
 typedef struct {
-  size_t n_states;
-  aes_state_t* states;
   u32 expanded_key[AES_128_EXPKEY_LEN];
+  u8* output;
+  size_t out_len;
+  u32 nonce;
+  u64 iv;
 } aes_ctx_t;
 
 void aes_128_gen_key(u8*);
-aes_ctx_t* aes_128_ctx_init(aes_key_t, u8*, size_t);
+aes_ctx_t* aes_128_ctx_init(aes_key_t);
 void aes_128_ctx_free(aes_ctx_t*);
-void aes_128_encrypt(aes_ctx_t*);
+void aes_128_encrypt(aes_ctx_t*, const u8*, size_t);
 void aes_128_decrypt(aes_ctx_t*);
 
 #endif // __AES_H

@@ -6,14 +6,14 @@
 
 #define AES_128_N_RNDS 10
 #define AES_128_BLK_LEN_W 4
-#define AES_128_EXPKEY_LEN 4
 #define WORD_LEN 4
 #define BYTE_LEN 8
 #define NIBBLE_LEN 4
 
 /*
- * An attempt at implementing the Advanced Encryption Standard (AES) block chiper according
- * to the FIPS 197 (https://csrc.nist.gov/publications/detail/fips/197/final).
+ * A completely compiler and architecture-dependent attempt at implementing the Advanced Encryption
+ * Standard (AES) block chiper according to the FIPS 197 (https://csrc.nist.gov/publications/detail/fips/197/final)
+ * using CTR-mode block encryption (https://www.rfc-editor.org/info/rfc3686)
  */
 
 const u32 Rcon[10] = { 0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80, 0x1b, 0x36 };
@@ -55,10 +55,13 @@ const u8 InvSbox[16][16] = {
     {0x17, 0x2b, 0x04, 0x7e, 0xba, 0x77, 0xd6, 0x26, 0xe1, 0x69, 0x14, 0x63, 0x55, 0x21, 0x0c, 0x7d}};
 
 #ifndef NDEBUG
-const u8 test_k[AES_128_KEY_LEN] = { 0x2b, 0x7e, 0x15, 0x16, 0x28, 0xae, 0xd2, 0xa6, 0xab, 0xf7, 0x15, 0x88, 0x09, 0xcf, 0x4f, 0x3c };
+const u8 test_k[AES_128_KEY_LEN] = { 0x76, 0x91, 0xBE, 0x03, 0x5E, 0x50, 0x20, 0xA8, 0xAC, 0x6E, 0x61, 0x85, 0x29, 0xF9, 0xA0, 0xDC };
+const u8 iv[8] = { 0x27, 0x77, 0x7F, 0x3F, 0x4A, 0x17, 0x86, 0xF0 };
+const u8 nonce[4] = { 0x00, 0xE0, 0x01, 0x7B };
 #endif
 
 // Private functions declarations
+static void init_counter_block(aes_state_t* counter_block, aes_ctx_t* context);
 static void cipher(aes_state_t* state, const int n_rnds, u32* expanded_key);
 static void key_expansion(const u8* k, u32* w, const int n_rnds);
 static void add_round_key(aes_state_t* state, const uint32_t* round_key);
@@ -67,9 +70,14 @@ static u32 inv_sub_word(u32 word);
 static u32 rot_word(u32 word, const int times);
 static void sub_bytes(aes_state_t* state);
 static void shift_rows(aes_state_t* state);
-static void mix_columns(aes_state_t* state);
 static void inv_shift_rows(aes_state_t* state);
+static void mix_columns(aes_state_t* state);
+static void increment_counter(aes_state_t* counter_block);
 static u8 gmul(u8 a, u8 b);
+static void xor_block_into_bytes(u8* bytes, const aes_state_t* state);
+static void xor_bytes_into_block(aes_state_t* state, const u8* bytes);
+static void gen_rand_bytes(u8* dest, size_t len);
+static void bytes_to_block(aes_state_t* state, const u8* bytes);
 
 #ifndef NDEBUG
 static void print_state(const aes_state_t* state);
@@ -82,56 +90,38 @@ void aes_128_gen_key(u8* k) {
 #ifndef NDEBUG
   memcpy(k, test_k, AES_128_KEY_LEN);
 #else
-  for (int i = 0; i < AES_128_KEY_LEN; i++) {
-    k[i] = i+1;
-  }
+  gen_rand_bytes(k, AES_128_KEY_LEN);
 #endif
 }
 
-aes_ctx_t* aes_128_ctx_init(aes_key_t key, u8* msg, size_t len) {
+aes_ctx_t* aes_128_ctx_init(aes_key_t key) {
   aes_ctx_t* context = (aes_ctx_t*) malloc(sizeof(aes_ctx_t));
 
   if (context == NULL) {
-    printf("DEU RUIM\n");
+    fprintf(stderr, "ERROR: couldn't allocate memory for AES context\n");
     return NULL;
   }
 
   key_expansion(key, context->expanded_key, AES_128_N_RNDS);
   
-  bool should_add_padded_block = (len % sizeof(aes_state_t) > 0);
-  size_t n_states = len/sizeof(aes_state_t); // Insert truncaded number of blocks
-  n_states += should_add_padded_block;       // If m does not fit perfectly in the blocks
-                                             // add another block with padding
-  // Initialize blocks
-  aes_state_t* states = (aes_state_t*) malloc(n_states * sizeof(aes_state_t));
-
-  if (should_add_padded_block) {
-    memset(&states[n_states-1], 0, sizeof(aes_state_t)); // Clear last block (for padding with 0s)
-  }
-  
-  // Insert message bytes into state blocks
-  size_t m_idx = 0;
-  for (size_t b = 0; b < n_states; b++) {
-    for (size_t i = 0; i < 4; i++) {
-      for (size_t j = 0; j < 4; j++) {
-        states[b].bytes[j][i] = msg[m_idx++];
-      }
-    }
-  }
-
-  context->n_states = n_states;
-  context->states = states;
+#ifndef NDEBUG
+  memcpy(&(context->nonce), nonce, sizeof(nonce));
+  memcpy(&(context->iv), iv, sizeof(iv));
+#else
+  // Initialize "random" nonce and initialization vector and save it in the context for later decryption
+  gen_rand_bytes((u8*) &(context->nonce), sizeof(context->nonce));
+  gen_rand_bytes((u8*) &(context->iv), sizeof(context->iv));
+#endif
+  context->out_len = 0;
+  context->output = NULL;
   
 #ifndef NDEBUG
-  printf("Message: \n");
-  print_bytes(msg, len);
+  printf("Nonce: ");
+  print_bytes((u8*) &(context->nonce), sizeof(context->nonce));
   printf("\n");
-  printf("Blocks as bytes (len = %lu):\n", n_states);
-  for (size_t b = 0; b < n_states; b++) {
-    print_state(&states[b]);
-    printf("\n");
-  }
-  printf("END OF BLOCKS\n\n");
+  printf("IV: ");
+  print_bytes((u8*) &(context->iv), sizeof(context->iv));
+  printf("\n");
 #endif 
 
   return context;
@@ -139,17 +129,66 @@ aes_ctx_t* aes_128_ctx_init(aes_key_t key, u8* msg, size_t len) {
 
 void aes_128_ctx_free(aes_ctx_t* context) {
   if (context != NULL) {
-    free(context->states);
+    if (context->output != NULL) {
+      free(context->output);
+    }
     free(context);
   }
 }
 
-void aes_128_encrypt(aes_ctx_t* context) {
-  // Cipher every block
-  for (size_t i = 0; i < context->n_states; i++) {
-    cipher(&(context->states[i]), AES_128_N_RNDS, context->expanded_key);
+void aes_128_encrypt(aes_ctx_t* context, const u8* input, size_t len) {
+#ifndef NDEBUG
+  printf("Input: ");
+  print_bytes(input, len);
+  printf("\n");
+#endif
+
+  // Initialize counter block using nonce, initialization vector and counter
+  aes_state_t ctr_block;
+  init_counter_block(&ctr_block, context);
+
+  // Compute number of blocks to be ciphered
+  u32 last_block_len = (len % sizeof(aes_state_t) > 0);
+  size_t n_blocks = len/sizeof(aes_state_t); // Insert truncaded number of blocks
+  n_blocks += (last_block_len > 0);          // If m does not fit perfectly in the blocks
+                                             // add another block with padding
+
+  // Copy input into output to facilitate XOR operations with the cipher result
+  if (context->output == NULL) {
+    context->output = calloc(n_blocks * sizeof(aes_state_t), sizeof(u8));
   }
 
+  if (context->output == NULL) {
+    fprintf(stderr, "ERROR: couldn't allocate memory for output stream\n");
+    return;
+  }
+  memcpy(context->output, input, len);
+  context->out_len = len;
+  
+  // Operate over every block except the last, because it may need to be truncated
+  aes_state_t res; 
+  size_t block_idx = 0;
+  for (size_t i = 0; i < n_blocks; i++) {
+    res = ctr_block;
+    cipher(&res, AES_128_N_RNDS, context->expanded_key);
+    xor_block_into_bytes(&(context->output[block_idx]), &res);
+    increment_counter(&ctr_block);
+    block_idx += sizeof(aes_state_t);
+#ifndef NDEBUG
+    printf("Counter block (%ld):\n", i+1);
+    print_state(&ctr_block);
+    printf("\n");
+    printf("Key Stream (%ld):\n", i+1);
+    print_state(&res);
+    printf("\n");
+#endif
+  }
+  
+#ifndef NDEBUG
+  printf("Output: ");
+  print_bytes(context->output, len);
+  printf("\n");
+#endif
 }
 
 void aes_128_decrypt(aes_ctx_t* context) {
@@ -157,6 +196,34 @@ void aes_128_decrypt(aes_ctx_t* context) {
 }
 
 // Private function bodies
+
+static void init_counter_block(aes_state_t* counter_block, aes_ctx_t* context) {
+  /* Inserts bytes into the block according to the following diagram, where nonce and counter
+   * are a 32 bit value and the initialization vector is a 64 bit value:
+   * 
+   * 0                   1                   2                   3
+   * 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+   * +---------------------------------------------------------------+
+   * |                            Nonce                              |
+   * +---------------------------------------------------------------+
+   * |                  Initialization Vector (IV)                   |
+   * |                                                               |
+   * +---------------------------------------------------------------+
+   * |                         Block Counter                         |
+   * +---------------------------------------------------------------+ 
+   *  
+   * Please note that the representation presented in the RFC (Section 4) used as reference
+   * uses a big-endian 32 bit integer value, meaning that our counter should start MSB first,
+   * but our target architecture (x86 LSB-first) encodes memory in little-endian. This means 
+   * that we need to initialize and operate on our counter MSB-first to comply with the RFC
+   * used as reference. */
+  u32 counter_block_words[sizeof(aes_state_t) / sizeof(u32)];
+  counter_block_words[0] = context->nonce;
+  counter_block_words[1] = context->iv & 0xFFFFFFFF;
+  counter_block_words[2] = context->iv >> 32;
+  counter_block_words[3] = 0x01000000; // Initialize counter as ONE LSB-first
+  bytes_to_block(counter_block, (u8*) counter_block_words);
+}
 
 static void cipher(aes_state_t* state, const int n_rnds, u32* expanded_key) {
   add_round_key(state, expanded_key);
@@ -197,69 +264,31 @@ static void key_expansion(const u8* k, u32* w, const int n_rnds) {
     if (i % Nk == 0) {
       temp = sub_word(rot_word(temp, 1)) ^ Rcon[i/Nk - 1];
     }
-
     w[i] = w[i-Nk] ^ temp;
   }
-  
-#ifndef NDEBUG
-  printf("Key bytes:\n");
-  print_bytes(k, AES_128_KEY_LEN);
-  printf("\n");
-  printf("Expanded key words:\n");
-  print_words(w, 4*(AES_128_N_RNDS+1));
-  printf("\n");
-#endif
 }
 
 static void add_round_key(aes_state_t* state, const u32* round_key) {
-  u8* round_key_bytes = (u8*) round_key;
-  for (size_t i = 0; i < 4; i++) {
-    for (size_t j = 0; j < 4; j++) {
-      state->bytes[j][i] ^= round_key_bytes[i*4 + j];
-    }
-  }
-
-#ifndef NDEBUG
-  printf("Round key value:\n");
-  print_state(round_key);
-  printf("\n");
-#endif
+  const u8* round_key_bytes = (u8*) round_key;
+  xor_bytes_into_block(state, round_key_bytes);
 }
 
 static void sub_bytes(aes_state_t* state) {
   for (size_t i = 0; i < 4; i++) {
     state->words[i] = sub_word(state->words[i]);
   }
-
-#ifndef NDEBUG
-  printf("After sub bytes:\n");
-  print_state(state);
-  printf("\n");
-#endif
 }
 
 static void shift_rows(aes_state_t* state) {
   for (size_t i = 1; i < 4; i++) {
     state->words[i] = rot_word(state->words[i], i);
   }
-
-#ifndef NDEBUG
-  printf("After shift rows:\n");
-  print_state(state);
-  printf("\n");
-#endif
 }
 
 static void inv_shift_rows(aes_state_t* state) {
   for (size_t i = 1; i < 4; i++) {
     state->words[i] = rot_word(state->words[i], i);
   }
-
-#ifndef NDEBUG
-  printf("After shift rows:\n");
-  print_state(state);
-  printf("\n");
-#endif
 }
 
 static void mix_columns(aes_state_t* state) {
@@ -277,12 +306,28 @@ static void mix_columns(aes_state_t* state) {
     state->bytes[2][j] = column[0] ^ column[1] ^ gmul(0x02, column[2]) ^ gmul(0x03, column[3]);
     state->bytes[3][j] = gmul(0x03, column[0]) ^ column[1] ^ column[2] ^ gmul(0x02, column[3]);
   }
+}
 
-#ifndef NDEBUG
-  printf("After mix columns:\n");
-  print_state(state);
-  printf("\n");
-#endif
+static void increment_counter(aes_state_t* counter_block) {
+  /* The last column of the block represets our counter:
+   *
+   * +----+----+----+======+
+   * | NO | IV | IV | C[3] | <- MSB
+   * +----+----+----+======+
+   * | NO | IV | IV | C[2] |
+   * +----+----+----+======+
+   * | NO | IV | IV | C[1] |
+   * +----+----+----+======+
+   * | NO | IV | IV | C[9] |
+   * +----+----+----+======+ */
+  u32 new_counter = (counter_block->bytes[0][3] << 24 |
+                     counter_block->bytes[1][3] << 18 |
+                     counter_block->bytes[2][3] << 8  |
+                     counter_block->bytes[3][3]) + 1;
+  counter_block->bytes[3][3] = new_counter & 0xFF;
+  counter_block->bytes[2][3] = (new_counter >> 8) & 0xFF;
+  counter_block->bytes[1][3] = (new_counter >> 16) & 0xFF;
+  counter_block->bytes[0][3] = (new_counter >> 24) & 0xFF;
 }
 
 static u32 rot_word(u32 word, const int times) {
@@ -293,11 +338,6 @@ static u32 rot_word(u32 word, const int times) {
       word = word >> BYTE_LEN;
       word = word | (temp & 0xFF) << (3*BYTE_LEN);
   }
-  
-#ifndef NDEBUG
-  printf("After rot word %d times: %08x\n", times, word);
-#endif
-
   return word;
 }
 
@@ -309,11 +349,6 @@ static u32 inv_rot_word(u32 word, const int times) {
       word = word << BYTE_LEN;
       word = word | (temp & 0xFF) >> (3*BYTE_LEN);
   }
-  
-#ifndef NDEBUG
-  printf("After rot word %d times: %08x\n", times, word);
-#endif
-
   return word;
 }
 
@@ -326,11 +361,6 @@ static u32 sub_word(u32 word) {
             y_nibble = word_bytes[i] & 0x0F;
     ret_word |= SBox[x_nibble][y_nibble] << (i*BYTE_LEN); 
   }
-
-#ifndef NDEBUG
-  printf("After sub word: %08x\n", ret_word);
-#endif
-  
   return ret_word;
 }
 
@@ -343,17 +373,11 @@ static u32 inv_sub_word(u32 word) {
             y_nibble = word_bytes[i] & 0x0F;
     ret_word |= InvSbox[x_nibble][y_nibble] << (i*BYTE_LEN); 
   }
-
-#ifndef NDEBUG
-  printf("After sub word: %08x\n", ret_word);
-#endif
-  
   return ret_word;
 }
 
 static u8 gmul(u8 a, u8 b) {
   u8 res = 0;
-
   // Iterate over the bits that compose b aplying the repeated xTimes() technique, see
   // equation 4.6 in the reference
   while (b) {
@@ -370,6 +394,39 @@ static u8 gmul(u8 a, u8 b) {
   }
 
   return res;
+}
+
+static void xor_block_into_bytes(u8* bytes, const aes_state_t* state) {
+  size_t bcounter = 0;
+  for (size_t i = 0; i < 4; i++) {
+    for (size_t j = 0; j < 4; j++) {
+      bytes[bcounter++] ^= state->bytes[j][i];
+    }
+  }
+}
+
+static void xor_bytes_into_block(aes_state_t* state, const u8* bytes) {
+  size_t bcounter = 0;
+  for (size_t i = 0; i < 4; i++) {
+    for (size_t j = 0; j < 4; j++) {
+      state->bytes[j][i] ^= bytes[bcounter++];
+    }
+  }
+}
+
+static void gen_rand_bytes(u8* dest, size_t len) {
+  for (size_t i = 0; i < len; i++) {
+    dest[i] = rand() % 0x100;
+  }
+}
+
+static void bytes_to_block(aes_state_t* state, const u8* bytes) {
+  size_t bcounter = 0;
+  for (size_t i = 0; i < 4; i++) {
+    for (size_t j = 0; j < 4; j++) {
+      state->bytes[j][i] = bytes[bcounter++];
+    }
+  }
 }
 
 #ifndef NDEBUG

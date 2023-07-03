@@ -17,7 +17,7 @@ LIBS = -lgmp
 
 all: debug
 
-release: CFLAGS += -DNDEBUG=1 -O2
+release: CFLAGS += -DNDEBUG -O2
 release: $(BIN)
 
 debug: CFLAGS += -g -Wall -Wformat -Wpedantic -fno-omit-frame-pointer
