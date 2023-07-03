@@ -33,6 +33,6 @@ void aes_128_gen_key(u8*);
 aes_ctx_t* aes_128_ctx_init(aes_key_t);
 void aes_128_ctx_free(aes_ctx_t*);
 void aes_128_encrypt(aes_ctx_t*, const u8*, size_t);
-void aes_128_decrypt(aes_ctx_t*);
+void aes_128_decrypt(aes_ctx_t*, const u8*, size_t);
 
 #endif // __AES_H

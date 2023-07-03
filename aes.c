@@ -191,8 +191,9 @@ void aes_128_encrypt(aes_ctx_t* context, const u8* input, size_t len) {
 #endif
 }
 
-void aes_128_decrypt(aes_ctx_t* context) {
-  
+void aes_128_decrypt(aes_ctx_t* context, const u8* input, size_t len) {
+  // Since we are using CTR-mode, decryption trivial
+  aes_128_encrypt(context, input, len);
 }
 
 // Private function bodies
