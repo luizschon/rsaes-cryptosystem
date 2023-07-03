@@ -61,8 +61,6 @@ static void bytes_to_block(aes_block_t* state, const u8* bytes);
 
 #ifndef NDEBUG
 static void print_state(const aes_block_t* state);
-static void print_bytes(const u8* bytes, const size_t len);
-static void print_words(const u32* words, const size_t len);
 #endif
 
 // Function bodies
@@ -389,19 +387,5 @@ static void print_state(const aes_block_t* state) {
     }  
     printf("\n");
   }  
-}
-
-static void print_bytes(const u8* bytes, const size_t len) {
-  for (size_t i = 0; i < len; i++) {
-    printf("%02x ", bytes[i]);
-  }
-  printf("\n");
-}
- 
-static void print_words(const u32* words, const size_t len) {
-  for (size_t i = 0; i < len; i++) {
-    printf("%08x ", words[i]);
-  }
-  printf("\n");
 }
 #endif
