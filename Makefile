@@ -34,7 +34,7 @@ $(BIN): $(OBJS)
 	@echo "$(BIN) built successfully!"
 
 clean: 
-	rm -rf $(BUILD_D)
+	@rm -rf $(BUILD_D)
 	@echo "Finished cleaning built files"
 
 zip:
