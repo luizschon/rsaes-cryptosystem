@@ -13,7 +13,7 @@ ZIGNORE = ./$(BUILD_D)/\*
 
 CC = gcc
 CFLAGS = -std=c11 -I$(INCLUDE_D)
-LIBS = -lgmp
+LIBS = -lgmp -lssl -lcrypto
 
 all: debug
 

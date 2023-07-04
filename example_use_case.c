@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <openssl/crypto.h>
 
 #define SIZE AES_128_KEY_LEN
 
@@ -23,6 +24,12 @@ int main(int argc, char** argv) {
 
   rsa_ctx_t* rsa_context = rsa_ctx_init();
   rsa_ctx_free(rsa_context);
+
+  u8* digest;
+  size_t digest_len;
+  sha3_256_wrapper(message, 0x24, &digest, &digest_len);
+  print_bytes(digest, digest_len);
+  sha3_256_free(digest);
 
   return 0;
 }
