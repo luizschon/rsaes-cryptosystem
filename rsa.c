@@ -17,11 +17,15 @@ rsa_ctx_t* rsa_ctx_init() {
 }
 
 static bool is_probably_prime(mpz_t n, gmp_randstate_t rand_state) {
-  // The number generated is always odd and bigger then 2^(n_bits-1)-1 since we've set the
-  // 0th and (k-1)th bits as 1, so there is no need to check if the number is even.
+  // The 1st bit is set to 1, so there is no need to check if the number is even.
+  // But some basic checks againts small primes may prove useful to avoid heavy
+  // unnecessary computation.
+  if (mpz_fdiv_ui(n, 3) == 0 || mpz_fdiv_ui(n, 5) == 0 || mpz_fdiv_ui(n, 7) == 0) {
+    return false;
+  } 
 
   // Implements the Miller-Rabin probabilistic method of primality checking
-  // (https://en.wikipedia.org/wiki/Miller%E2%80%93Rabin_primality_test)
+  // (https://en.wikipedia.org/wiki/Miller%E2%80%93Rabin_primality_test).
 
   // Representing n - 1 = 2^s*d
   mpz_t n_minus_one, d;
@@ -36,34 +40,35 @@ static bool is_probably_prime(mpz_t n, gmp_randstate_t rand_state) {
   }
 
   // Miller-Rabin iterations
+  mpz_t a_to_pow_of_d;
+  mpz_init(a_to_pow_of_d);
+
   for (size_t i = 0; i < MILLER_RABIN_ITERATIONS; i++) {
     bool passed = false;
-    // Initializes witness "a" for the compositness of the number "n" with a random value (mod n)
-    mpz_t a_to_pow_of_d;
-    mpz_inits(a_to_pow_of_d);
-    mpz_urandomm(a_to_pow_of_d, rand_state, n);      // a = random value (mod n)
-    mpz_powm_ui(a_to_pow_of_d, a_to_pow_of_d, d, n); // a_to_pow_of_d = a^d
+    // Initializes witness "a" for the compositness of the number "n" with a random value (mod n).
+    mpz_urandomm(a_to_pow_of_d, rand_state, n);   // a = random value (mod n)
+    mpz_powm(a_to_pow_of_d, a_to_pow_of_d, d, n); // a_to_pow_of_d = a^d
 
-    // First congruency checks: a^d = 1 (mod n) and a^(2^0*d) = -1 (mod n)
-    if (mpz_cmp_ui(a_to_pow_of_d, 1) == 0 || mpz_cmp_ui(a_to_pow_of_d, n_minus_one) == 0) {
+    // First congruency checks: a^d = 1 (mod n) and a^(2^0*d) = -1 (mod n).
+    if (mpz_cmp_ui(a_to_pow_of_d, 1) == 0 || mpz_cmp(a_to_pow_of_d, n_minus_one) == 0) {
       continue;
     }
 
     for (size_t r = 1; r < s; r++) {
-      // Subsequent congruency checks: a^(2^r*d) = -1 (mod n), 0 <= r < s
+      // Subsequent congruency checks: a^(2^r*d) = -1 (mod n), 0 <= r < s.
       mpz_powm_ui(a_to_pow_of_d, a_to_pow_of_d, 2, n);
-      if (mpz_cmp_ui(a_to_pow_of_d, n_minus_one) == 0) {
+      if (mpz_cmp(a_to_pow_of_d, n_minus_one) == 0) {
         passed = true;
         break;
       }
     }
     // If witness value "a" failed at every congruency check, then "n" is
-    // a composite number
+    // a composite number.
     if (!passed) {
       mpz_clears(n_minus_one, d, a_to_pow_of_d, NULL);
       return false;
     }
   }
-  mpz_clears(n_minus_one, d, NULL);
+  mpz_clears(n_minus_one, d, a_to_pow_of_d, NULL);
   return true;
 }
