@@ -10,8 +10,8 @@
 static void gen_prime(mpz_t prime, size_t num_bits, gmp_randstate_t rand_state);
 static bool is_probably_prime(mpz_t n, gmp_randstate_t rand_state);
 
-rsa_ctx_t *rsa_ctx_init() {
-  rsa_ctx_t *context = (rsa_ctx_t *)malloc(sizeof(rsa_ctx_t));
+rsa_ctx_t* rsa_ctx_init() {
+  rsa_ctx_t* context = (rsa_ctx_t*) malloc(sizeof(rsa_ctx_t));
 
   if (context == NULL) {
     fprintf(stderr, "ERROR: couldn't allocate memory for RSA context\n");
@@ -45,7 +45,7 @@ static void gen_prime(mpz_t prime, size_t num_bits, gmp_randstate_t rand_state) 
     mpz_setbit(prime, num_bits - 1);  // Set (num_bits)th and 1st bit as 1 so the number 
     mpz_setbit(prime, 0);             // is guaranteed to be bigger than 2^(n_bits-1)-1
                                       // and odd.
-  } while(!is_probably_prime(prime, rand_state));
+  } while (!is_probably_prime(prime, rand_state));
 
 #ifndef NDEBUG
   gmp_printf("Generated prime: %Zd\n\n", prime);
@@ -56,6 +56,8 @@ static bool is_probably_prime(mpz_t n, gmp_randstate_t rand_state) {
   // The 1st bit is set to 1, so there is no need to check if the number is even.
   // But some basic checks againts small primes may prove useful to avoid heavy
   // unnecessary computation.
+  // TODO: generate waaay more primes and check if n is divisible by them, maybe
+  // store in a pre-computed array; 
   if (mpz_fdiv_ui(n, 3) == 0 || mpz_fdiv_ui(n, 5) == 0 || mpz_fdiv_ui(n, 7) == 0) {
     return false;
   } 
