@@ -1,19 +1,55 @@
+#include <stdlib.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <time.h>
 #include "rsa.h"
 
-#define MILLER_RABIN_ITERATIONS 20
+#define MILLER_RABIN_ITERATIONS 10
+#define RSA_KEY_SIZE 1024
 
-// Global rand state used for the prime generation and primality check
-gmp_randstate_t rand_state;
+static void gen_prime(mpz_t prime, size_t num_bits, gmp_randstate_t rand_state);
+static bool is_probably_prime(mpz_t n, gmp_randstate_t rand_state);
 
-static bool is_probably_prime(mpz_t n);
+rsa_ctx_t *rsa_ctx_init() {
+  rsa_ctx_t *context = (rsa_ctx_t *)malloc(sizeof(rsa_ctx_t));
 
-rsa_ctx_t* rsa_ctx_init() {
-    gmp_randinit_default(rand_state);
-    gmp_randseed_ui(rand_state, time(NULL));
+  if (context == NULL) {
+    fprintf(stderr, "ERROR: couldn't allocate memory for RSA context\n");
+  }
 
+  // Initializes random state outside of the gen_prime function so we don't use the
+  // same seed twice be calling the function multiple times in quick succession.
+  gmp_randstate_t rand_state;
+  gmp_randinit_mt(rand_state);
+  gmp_randseed_ui(rand_state, time(NULL));
+
+  mpz_inits(context->p, context->q, NULL);
+  gen_prime(context->p, RSA_KEY_SIZE, rand_state);
+  gen_prime(context->q, RSA_KEY_SIZE, rand_state);
+  gmp_randclear(rand_state);
+
+  return context;
+}
+
+void rsa_ctx_free(rsa_ctx_t* context) {
+  if (context != NULL) {
+    mpz_clears(context->p, context->q, NULL);
+    free(context);
+  }
+}
+
+static void gen_prime(mpz_t prime, size_t num_bits, gmp_randstate_t rand_state) {
+  // Generate random numbers (mod 2^n - 1) until it passes the primality test.
+  do {
+    mpz_urandomb(prime, rand_state, num_bits);
+    mpz_setbit(prime, num_bits - 1);  // Set (num_bits)th and 1st bit as 1 so the number 
+    mpz_setbit(prime, 0);             // is guaranteed to be bigger than 2^(n_bits-1)-1
+                                      // and odd.
+  } while(!is_probably_prime(prime, rand_state));
+
+#ifndef NDEBUG
+  gmp_printf("Generated prime: %Zd\n\n", prime);
+#endif
 }
 
 static bool is_probably_prime(mpz_t n, gmp_randstate_t rand_state) {

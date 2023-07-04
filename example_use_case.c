@@ -16,23 +16,13 @@ int main(int argc, char** argv) {
     message[i] = i;
   }
 
-  // u8* cryptogram = aes_128_encrypt(message, SIZE, aes_key);
-  // for (size_t i = 0; i < SIZE; i++) {
-  //   printf("%02x ", cryptogram[i]);
-  // }
-  // printf("\n");
-  // free(cryptogram);
-  //rsa_gen_pq();
-  //rsa_sign();
-  //rsa_verify();
-  //aes_128_decrypt(cryptogram, message, aes_key);
-  // da uma olhada depois
-  
+  aes_ctx_t* aes_context = aes_128_ctx_init(aes_key);
+  aes_128_encrypt(aes_context, message, 0x24);
+  aes_128_decrypt(aes_context, aes_context->output, aes_context->out_len);
+  aes_128_ctx_free(aes_context);
 
-  aes_ctx_t* context = aes_128_ctx_init(aes_key);
-  aes_128_encrypt(context, message, 0x24);
-  aes_128_decrypt(context, context->output, context->out_len);
-  aes_128_ctx_free(context);
+  rsa_ctx_t* rsa_context = rsa_ctx_init();
+  rsa_ctx_free(rsa_context);
 
   return 0;
 }
