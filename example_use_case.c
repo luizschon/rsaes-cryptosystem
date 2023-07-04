@@ -28,7 +28,6 @@ int main(int argc, char** argv) {
   u8* digest;
   size_t digest_len;
   sha3_256_wrapper(message, 0x24, &digest, &digest_len);
-  print_bytes(digest, digest_len);
   sha3_256_free(digest);
 
   return 0;
