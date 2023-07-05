@@ -7,6 +7,7 @@
 #define MILLER_RABIN_ITERATIONS 10
 #define RSA_KEY_SIZE 1024
 
+static void gen_keys(rsa_ctx_t* context);
 static void gen_prime(mpz_t prime, size_t num_bits, gmp_randstate_t rand_state);
 static bool is_probably_prime(mpz_t n, gmp_randstate_t rand_state);
 
@@ -16,26 +17,57 @@ rsa_ctx_t* rsa_ctx_init() {
   if (context == NULL) {
     fprintf(stderr, "ERROR: couldn't allocate memory for RSA context\n");
   }
-
-  // Initializes random state outside of the gen_prime function so we don't use the
-  // same seed twice be calling the function multiple times in quick succession.
-  gmp_randstate_t rand_state;
-  gmp_randinit_mt(rand_state);
-  gmp_randseed_ui(rand_state, time(NULL));
-
-  mpz_inits(context->p, context->q, NULL);
-  gen_prime(context->p, RSA_KEY_SIZE, rand_state);
-  gen_prime(context->q, RSA_KEY_SIZE, rand_state);
-  gmp_randclear(rand_state);
+  mpz_inits(context->n, context->e, context->d, NULL);
+  gen_keys(context);
 
   return context;
 }
 
 void rsa_ctx_free(rsa_ctx_t* context) {
   if (context != NULL) {
-    mpz_clears(context->p, context->q, NULL);
+    mpz_clears(context->n, context->e, context->d, NULL);
     free(context);
   }
+}
+
+static void gen_keys(rsa_ctx_t* context) {
+  // Initializes random state outside of the gen_prime function so we don't use the
+  // same seed twice be calling the function multiple times in quick succession.
+  gmp_randstate_t rand_state;
+  gmp_randinit_mt(rand_state);
+  gmp_randseed_ui(rand_state, time(NULL));
+
+  // Generates two big prime numbers p, q and computes n and e
+  mpz_t p, q;
+  mpz_inits(p, q, NULL);
+  gen_prime(p, RSA_KEY_SIZE, rand_state);
+  gen_prime(q, RSA_KEY_SIZE, rand_state);
+
+  // Computes RSA modulus n
+  mpz_mul(context->n, p, q);  // n = pq
+
+  // See https://www.rfc-editor.org/rfc/rfc8017#section-3.1 
+  // Chooses biggest exponent e such that 2 < e < n and gcd(e, λ(n)) = 1, 
+  // λ(n) = lcm(p − 1, q − 1)
+  mpz_t lambda_n, gcd;
+  mpz_inits(lambda_n, gcd, NULL);
+  mpz_sub_ui(p, p, 1);      // p = p - 1
+  mpz_sub_ui(q, q, 1);      // q = q - 1
+  mpz_lcm(lambda_n, p, q);  // Computes λ(n)
+
+  mpz_sub_ui(context->e, context->n, 1);  // Initializes exponent with max value (n - 1)
+  while (mpz_cmp_ui(context->n, 3) >= 0) {
+    mpz_gcd(gcd, context->e, lambda_n);
+    if (mpz_cmp_ui(gcd, 1) == 1) {
+      break;
+    }
+    mpz_sub_ui(context->e, context->n, 1);
+  }
+
+  // TODO Compute d and stuff
+
+  gmp_randclear(rand_state);
+
 }
 
 static void gen_prime(mpz_t prime, size_t num_bits, gmp_randstate_t rand_state) {

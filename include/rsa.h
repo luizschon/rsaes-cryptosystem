@@ -4,7 +4,7 @@
 #include <gmp.h>
 
 typedef struct {
-    mpz_t p, q;
+    mpz_t n, e, d;
 } rsa_ctx_t;
 
 rsa_ctx_t* rsa_ctx_init();
