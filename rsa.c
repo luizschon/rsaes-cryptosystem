@@ -46,28 +46,36 @@ static void gen_keys(rsa_ctx_t* context) {
   // Computes RSA modulus n
   mpz_mul(context->n, p, q);  // n = pq
 
-  // See https://www.rfc-editor.org/rfc/rfc8017#section-3.1 
-  // Chooses biggest exponent e such that 2 < e < n and gcd(e, λ(n)) = 1, 
-  // λ(n) = lcm(p − 1, q − 1)
-  mpz_t lambda_n, gcd;
-  mpz_inits(lambda_n, gcd, NULL);
-  mpz_sub_ui(p, p, 1);      // p = p - 1
-  mpz_sub_ui(q, q, 1);      // q = q - 1
-  mpz_lcm(lambda_n, p, q);  // Computes λ(n)
+  // Chooses biggest exponent e such that 2 < e < φ(n) and gcd(e, φ(n)) = 1, 
+  // φ(n) = (p − 1)*(q − 1)
+  mpz_t phi_n, gcd;
+  mpz_inits(phi_n, gcd, NULL);
+  mpz_sub_ui(p, p, 1);  // p = p - 1
+  mpz_sub_ui(q, q, 1);  // q = q - 1
+  mpz_lcm(phi_n, p, q); // Computes λ(n)
 
-  mpz_sub_ui(context->e, context->n, 1);  // Initializes exponent with max value (n - 1)
-  while (mpz_cmp_ui(context->n, 3) >= 0) {
-    mpz_gcd(gcd, context->e, lambda_n);
+  mpz_sub_ui(context->e, phi_n, 1);  // Initializes exponent with max value (n - 1)
+  while (mpz_cmp_ui(context->e, 3) >= 0) {
+    mpz_gcd(gcd, context->e, phi_n);
     if (mpz_cmp_ui(gcd, 1) == 1) {
       break;
     }
-    mpz_sub_ui(context->e, context->n, 1);
+    mpz_sub_ui(context->e, context->e, 1);
   }
 
-  // TODO Compute d and stuff
+  // Choosing d such that e*d = 1 (mod φ(n))
+
+#ifndef NDEBUG
+  gmp_printf("P: %Zd\n\n", p);
+  gmp_printf("Q: %Zd\n\n", q);
+  gmp_printf("N: %Zd\n\n", context->n);
+  gmp_printf("Lambda(n): %Zd\n\n", phi_n);
+  gmp_printf("E: %Zd\n\n", context->e);
+  gmp_printf("D: %Zd\n\n", context->d);
+#endif
 
   gmp_randclear(rand_state);
-
+  mpz_clears(p, q, phi_n, gcd, NULL);
 }
 
 static void gen_prime(mpz_t prime, size_t num_bits, gmp_randstate_t rand_state) {
@@ -78,10 +86,6 @@ static void gen_prime(mpz_t prime, size_t num_bits, gmp_randstate_t rand_state) 
     mpz_setbit(prime, 0);             // is guaranteed to be bigger than 2^(n_bits-1)-1
                                       // and odd.
   } while (!is_probably_prime(prime, rand_state));
-
-#ifndef NDEBUG
-  gmp_printf("Generated prime: %Zd\n\n", prime);
-#endif
 }
 
 static bool is_probably_prime(mpz_t n, gmp_randstate_t rand_state) {
