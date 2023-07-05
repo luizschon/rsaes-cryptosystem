@@ -24,8 +24,8 @@ void sha3_256_wrapper(const u8* message, size_t message_len, u8** digest, size_t
     exit(1);
   }
 
-	EVP_DigestInit_ex(md_ctx, EVP_sha256(), NULL);
-	EVP_DigestUpdate(md_ctx, message, message_len);
+  EVP_DigestInit_ex(md_ctx, EVP_sha256(), NULL);
+  EVP_DigestUpdate(md_ctx, message, message_len);
   *digest = (u8*) OPENSSL_malloc(EVP_MD_size(EVP_sha256()));
   
   if(*digest == NULL) {
@@ -34,7 +34,7 @@ void sha3_256_wrapper(const u8* message, size_t message_len, u8** digest, size_t
   }
 
   EVP_DigestFinal_ex(md_ctx, *digest, (unsigned int*) digest_len);
-	EVP_MD_CTX_free(md_ctx);
+  EVP_MD_CTX_free(md_ctx);
 
 #ifndef NDEBUG
   printf("SHA digest: ");
