@@ -167,6 +167,8 @@ static bool is_probably_prime(mpz_t n, gmp_randstate_t rand_state) {
 }
 
 static void multiplicative_inverse(mpz_t out, mpz_t in, mpz_t mod) {
+  // Uses the Extended Euclidian Algorithm to compute the modular multiplicative inverse of the number
+  // "in" mod "mod".
   mpz_t x, y;
   mpz_inits(x, y, NULL);
   extended_euclidian(in, mod, x, y);
@@ -175,6 +177,7 @@ static void multiplicative_inverse(mpz_t out, mpz_t in, mpz_t mod) {
 }
 
 static void extended_euclidian(mpz_t a, mpz_t b, mpz_t x, mpz_t y) {
+  // Recursive implementation of the Extended Euclidian Algorithm.
   // Base case (b == 0)
   if (mpz_cmp_ui(b, 0) == 0) {
     mpz_set_ui(x, 1);
@@ -182,7 +185,6 @@ static void extended_euclidian(mpz_t a, mpz_t b, mpz_t x, mpz_t y) {
     return;
   }
 
-  // Recursive implementation of the Extended Euclidian Algorithm
   mpz_t x1, y1, mod;
   mpz_inits(x1, y1, mod, NULL);
   mpz_mod(mod, a, b);
