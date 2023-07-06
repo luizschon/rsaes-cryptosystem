@@ -2,14 +2,18 @@
 #include <stdbool.h>
 #include <stdio.h>
 #include <time.h>
+#include <assert.h>
 #include "rsa.h"
 
 #define MILLER_RABIN_ITERATIONS 10
 #define RSA_KEY_SIZE 1024
+#define RSA_PUBLIC_EXP 65537
 
-static void gen_keys(rsa_ctx_t* context);
 static void gen_prime(mpz_t prime, size_t num_bits, gmp_randstate_t rand_state);
+static void gen_keys(rsa_ctx_t* context);
 static bool is_probably_prime(mpz_t n, gmp_randstate_t rand_state);
+static void multiplicative_inverse(mpz_t out, mpz_t in, mpz_t mod);
+static void extended_euclidian(mpz_t a, mpz_t b, mpz_t x, mpz_t y);
 
 rsa_ctx_t* rsa_ctx_init() {
   rsa_ctx_t* context = (rsa_ctx_t*) malloc(sizeof(rsa_ctx_t));
@@ -44,38 +48,50 @@ static void gen_keys(rsa_ctx_t* context) {
   gen_prime(q, RSA_KEY_SIZE, rand_state);
 
   // Computes RSA modulus n
-  mpz_mul(context->n, p, q);  // n = pq
+  mpz_mul(context->n, p, q);
 
-  // Chooses biggest exponent e such that 2 < e < φ(n) and gcd(e, φ(n)) = 1, 
-  // φ(n) = (p − 1)*(q − 1)
-  mpz_t phi_n, gcd;
-  mpz_inits(phi_n, gcd, NULL);
-  mpz_sub_ui(p, p, 1);  // p = p - 1
-  mpz_sub_ui(q, q, 1);  // q = q - 1
-  mpz_lcm(phi_n, p, q); // Computes λ(n)
+  // Chooses biggest exponent e such that 2 < e < φ(n) and gcd(e, φ(n)) = 1,  φ(n) = (p − 1)*(q − 1)
+  mpz_t phi_n, gcd, p_minus_one, q_minus_one;
+  mpz_inits(phi_n, gcd, p_minus_one, q_minus_one, NULL);
+  mpz_sub_ui(p_minus_one, p, 1);
+  mpz_sub_ui(q_minus_one, q, 1);
+  mpz_mul(phi_n, p_minus_one, q_minus_one); // Computes λ(n) = (p - 1)*(q - 1)
 
-  mpz_sub_ui(context->e, phi_n, 1);  // Initializes exponent with max value (n - 1)
-  while (mpz_cmp_ui(context->e, 3) >= 0) {
-    mpz_gcd(gcd, context->e, phi_n);
-    if (mpz_cmp_ui(gcd, 1) == 1) {
-      break;
-    }
-    mpz_sub_ui(context->e, context->e, 1);
-  }
+  // TODO: this will do, but maybe there's a better way to generate E? This seems to be a very
+  // common value used for e (efficient) and other options may be computationally intensive
+  mpz_set_ui(context->e, RSA_PUBLIC_EXP);
 
-  // Choosing d such that e*d = 1 (mod φ(n))
+  // Initializes test value used for basic assertions
+  mpz_t test;
+  mpz_init(test);
+
+  // Asserts that gcd(e, φ(n)) == 1 and 2 < e < φ(n)
+  mpz_gcd(test, context->e, phi_n);
+  gmp_printf("TESTE: %Zd\n", test);
+  assert(mpz_cmp_ui(test, 1) == 0);
+  assert(mpz_cmp(context->e, phi_n) < 0);
+  assert(mpz_cmp_ui(context->e, 2) > 0);
+
+  // Choosing d such that e*d = 1 (mod φ(n)). That is, d is the modular multiplicative inverse of e
+  // mod φ(n)
+  multiplicative_inverse(context->d, context->e, phi_n);
+  
+  // Asserts that e*d = 1 (mod φ(n))
+  mpz_mul(test, context->e, context->d);
+  mpz_mod(test, test, phi_n);
+  assert(mpz_cmp_ui(test, 1) == 0);
 
 #ifndef NDEBUG
   gmp_printf("P: %Zd\n\n", p);
   gmp_printf("Q: %Zd\n\n", q);
   gmp_printf("N: %Zd\n\n", context->n);
-  gmp_printf("Lambda(n): %Zd\n\n", phi_n);
+  gmp_printf("Phi(n): %Zd\n\n", phi_n);
   gmp_printf("E: %Zd\n\n", context->e);
   gmp_printf("D: %Zd\n\n", context->d);
 #endif
 
   gmp_randclear(rand_state);
-  mpz_clears(p, q, phi_n, gcd, NULL);
+  mpz_clears(p, q, p_minus_one, q_minus_one, phi_n, gcd, test, NULL);
 }
 
 static void gen_prime(mpz_t prime, size_t num_bits, gmp_randstate_t rand_state) {
@@ -145,4 +161,32 @@ static bool is_probably_prime(mpz_t n, gmp_randstate_t rand_state) {
   }
   mpz_clears(n_minus_one, d, a_to_pow_of_d, NULL);
   return true;
+}
+
+static void multiplicative_inverse(mpz_t out, mpz_t in, mpz_t mod) {
+  mpz_t x, y;
+  mpz_inits(x, y, NULL);
+  extended_euclidian(in, mod, x, y);
+  mpz_mod(out, x, mod);
+  mpz_clears(x, y, NULL);
+}
+
+static void extended_euclidian(mpz_t a, mpz_t b, mpz_t x, mpz_t y) {
+  // Base case (b == 0)
+  if (mpz_cmp_ui(b, 0) == 0) {
+    mpz_set_ui(x, 1);
+    mpz_set_ui(y, 0);
+    return;
+  }
+
+  // Recursive implementation of the Extended Euclidian Algorithm
+  mpz_t x1, y1, mod;
+  mpz_inits(x1, y1, mod, NULL);
+  mpz_mod(mod, a, b);
+  extended_euclidian(b, mod, x1, y1);
+  mpz_fdiv_q(y, a, b);  // y = a / b
+  mpz_mul(y, y, y1);    // y = y * y1 = (a / b) * y1
+  mpz_sub(y, x1, y);    // y = x1 - y = x1 - (a / b) * y1
+  mpz_set(x, y1);       // x = y1
+  mpz_clears(x1, y1, mod, NULL);
 }
