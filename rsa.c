@@ -70,7 +70,6 @@ static void gen_keys(rsa_ctx_t* context) {
 
   // Asserts that gcd(e, φ(n)) == 1 and 2 < e < φ(n)
   mpz_gcd(test, context->e, phi_n);
-  gmp_printf("TESTE: %Zd\n", test);
   assert(mpz_cmp_ui(test, 1) == 0);
   assert(mpz_cmp(context->e, phi_n) < 0);
   assert(mpz_cmp_ui(context->e, 2) > 0);
