@@ -135,6 +135,7 @@ static bool is_probably_prime(mpz_t n, gmp_randstate_t rand_state) {
   // Miller-Rabin iterations
   mpz_t a_to_pow_of_d;
   mpz_init(a_to_pow_of_d);
+  bool res = true;
 
   for (size_t i = 0; i < MILLER_RABIN_ITERATIONS; i++) {
     bool passed = false;
@@ -158,12 +159,12 @@ static bool is_probably_prime(mpz_t n, gmp_randstate_t rand_state) {
     // If witness value "a" failed at every congruency check, then "n" is
     // a composite number.
     if (!passed) {
-      mpz_clears(n_minus_one, d, a_to_pow_of_d, NULL);
-      return false;
+      res = false;
+      break;
     }
   }
   mpz_clears(n_minus_one, d, a_to_pow_of_d, NULL);
-  return true;
+  return res;
 }
 
 static void multiplicative_inverse(mpz_t out, mpz_t in, mpz_t mod) {
