@@ -48,7 +48,7 @@ static void gen_keys(rsa_ctx_t* context) {
   // To guarantee that p and q are different primes, recomputes q until they are different
   do {
     gen_prime(q, RSA_KEY_SIZE, rand_state);
-  } while (mpz_cmp(p, q) == 0)
+  } while (mpz_cmp(p, q) == 0);
 
   // Computes RSA modulus n
   mpz_mul(context->n, p, q);
