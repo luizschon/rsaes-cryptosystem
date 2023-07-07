@@ -55,9 +55,9 @@ void sha3_256_wrapper(const u8* message, size_t message_len, u8** digest) {
   EVP_MD_CTX_free(md_ctx);
 
 #ifndef NDEBUG
-  printf("SHA digest: ");
-  print_bytes(*digest, digest_len);
-  printf("\n");
+  /*printf("SHA digest: ");*/
+  /*print_bytes(*digest, digest_len);*/
+  /*printf("\n");*/
 #endif
 }
 

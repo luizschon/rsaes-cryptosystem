@@ -29,7 +29,7 @@ rsa_ctx_t* rsa_ctx_init() {
   if (context == NULL) {
     fprintf(stderr, "ERROR: couldn't allocate memory for RSA context\n");
   }
-  mpz_inits(context->n, context->e, context->d, NULL);
+  mpz_inits(context->n, context->e, context->d, context->c, NULL);
   gen_keys(context);
 
   return context;
@@ -37,12 +37,12 @@ rsa_ctx_t* rsa_ctx_init() {
 
 void rsa_ctx_free(rsa_ctx_t* context) {
   if (context != NULL) {
-    mpz_clears(context->n, context->e, context->d, NULL);
+    mpz_clears(context->n, context->e, context->d, context->c, NULL);
     free(context);
   }
 }
 
-void rsa_oaep_sha256_encrypt(mpz_t mod, mpz_t exp, u8* msg, size_t len) {
+void rsa_oaep_sha256_encrypt(mpz_t dest, mpz_t mod, mpz_t exp, u8* msg, size_t len) {
   size_t n_len = sizeof_mpz(mod);
   u8 encoded_msg[n_len];
   oaep_sha256_encode(encoded_msg, msg, len, n_len);
@@ -51,8 +51,6 @@ void rsa_oaep_sha256_encrypt(mpz_t mod, mpz_t exp, u8* msg, size_t len) {
   mpz_inits(message_rep, cryptogram, NULL);
   mpz_import(message_rep, sizeof(encoded_msg), -1, sizeof(encoded_msg[0]), 0, 0, encoded_msg);
 
-  gmp_printf("message rep: %Zd\n", message_rep);
-
   // Message representative was to be between 0 and n - 1
   if (mpz_cmp(message_rep, mod) >= 0 || mpz_cmp_ui(message_rep, 0) < 0) {
     fprintf(stderr, "ERROR message representative out of range\n");
@@ -60,13 +58,72 @@ void rsa_oaep_sha256_encrypt(mpz_t mod, mpz_t exp, u8* msg, size_t len) {
   }
 
   mpz_powm(cryptogram, message_rep, exp, mod);
-  gmp_printf("cryptogram: %Zd\n", cryptogram);
+  gmp_printf("cryptogram: %Zd\n\n", cryptogram);
+
+  mpz_set(dest, cryptogram);
 
   mpz_clears(message_rep, cryptogram, NULL);
 }
 
-void rsa_oaep_sha256_decrypt(mpz_t mod, mpz_t exp, u8* cryptogram, size_t len) {
+void rsa_oaep_sha256_decrypt(mpz_t mod, mpz_t exp, mpz_t msg, size_t len) {
+  size_t k_len = sizeof_mpz(exp);
+  size_t hLen = SHA256_DIGEST_LEN;
+  
+  if (k_len < 2*hLen + 2) {
+    fprintf(stderr, "decryption error");
+    exit(1);
+  }
 
+  mpz_t decrypted;
+  mpz_init(decrypted);
+
+  mpz_powm(decrypted, msg, exp, mod);
+  size_t decrypted_len = sizeof_mpz(decrypted);
+
+  // TODO: extract in oaep_sha256_decode function
+  u8 encoded_msg[decrypted_len];
+  mpz_export(encoded_msg, NULL, -1, 1, 0, 0, decrypted);
+
+  u8 y = encoded_msg[0];
+
+  u8 maskedSeed[hLen];
+  memcpy(maskedSeed, &encoded_msg[1], hLen);
+  u8 maskedDb[decrypted_len - hLen - 1];
+  memcpy(maskedDb, &encoded_msg[1 + hLen], decrypted_len-1-hLen);
+
+  u8 seedMask[hLen];
+  mgf1_sha256(seedMask, maskedDb, sizeof(maskedDb), hLen);
+
+  u8 seed[hLen];
+  xor_bytes(seed, maskedSeed, seedMask, sizeof(maskedSeed));
+
+  u8 dbMask[len - hLen - 1];
+  mgf1_sha256(dbMask, seed, sizeof(seed), sizeof(dbMask));
+
+  u8 db[sizeof(maskedDb)];
+  xor_bytes(db, maskedDb, dbMask, sizeof(maskedDb));
+
+#ifndef NDEBUG
+  printf("===== DECRYPTION =====\n\n");
+  printf("decrypted_size: %zu\n\n", decrypted_len);
+  printf("Encoded after decrytion: ");
+  print_bytes(encoded_msg, decrypted_len);
+  printf("\nY: %02x\n\n", y);
+  printf("\nseed: ");
+  print_bytes(seed, sizeof(seed));
+  printf("seedMask: ");
+  print_bytes(seedMask, hLen);
+  printf("maskedSeed: ");
+  print_bytes(maskedSeed, hLen);
+  printf("\nmaskedDb: ");
+  print_bytes(maskedDb, sizeof(maskedDb));
+  printf("\ndbMask: ");
+  print_bytes(dbMask, sizeof(dbMask));
+  printf("\ndb: ");
+  print_bytes(db, sizeof(db));
+#endif
+
+  mpz_clear(decrypted);
 }
 
 static void gen_keys(rsa_ctx_t* context) {
@@ -247,11 +304,17 @@ static void oaep_sha256_encode(u8* encoded_msg, const u8* msg, size_t len, size_
   sha3_256_wrapper((u8*) label, 0, &lHash);
 
   // TODO explain this because i can
+  // allocate db sized vector
   u8 db[n_len - hLen - 1];
+  // set all bytes to 0
   memset(db, 0, sizeof(db));
+  // set first 32 bytes to hash of label
   memcpy(db, lHash, hLen);
+  // writes 0x01 before last len bytes 
   db[sizeof(db) - (len + 1)] = 0x01;
+  // writes msg in last len bytes
   memcpy(&db[sizeof(db) - len], msg, len);
+  // result db = lHash || padding 0's || 0x01 || msg
 
   u8 seed[hLen];
   gen_rand_bytes(seed, hLen); 

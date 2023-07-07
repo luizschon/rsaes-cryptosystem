@@ -23,7 +23,8 @@ int main(int argc, char** argv) {
   aes_128_ctx_free(aes_context);
 
   rsa_ctx_t* rsa_context = rsa_ctx_init();
-  rsa_oaep_sha256_encrypt(rsa_context->n, rsa_context->e, message, 0x24);
+  rsa_oaep_sha256_encrypt(rsa_context->c, rsa_context->n, rsa_context->e, message, 0x24);
+  rsa_oaep_sha256_decrypt(rsa_context->n, rsa_context->d, rsa_context->c, sizeof_mpz(rsa_context->c));
   rsa_ctx_free(rsa_context);
 
   return 0;
