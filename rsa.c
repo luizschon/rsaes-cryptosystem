@@ -1,19 +1,25 @@
 #include <stdlib.h>
 #include <stdbool.h>
 #include <stdio.h>
+#include <string.h>
 #include <time.h>
 #include <assert.h>
+#include <math.h>
 #include "rsa.h"
+#include "common.h"
 
 #define MILLER_RABIN_ITERATIONS 10
 #define RSA_KEY_SIZE 1024
 #define RSA_PUBLIC_EXP 65537
+#define SHA256_DIGEST_LEN 32
 
 static void gen_prime(mpz_t prime, size_t num_bits, gmp_randstate_t rand_state);
 static void gen_keys(rsa_ctx_t* context);
 static bool is_probably_prime(mpz_t n, gmp_randstate_t rand_state);
 static void multiplicative_inverse(mpz_t out, mpz_t in, mpz_t mod);
 static void extended_euclidian(mpz_t a, mpz_t b, mpz_t x, mpz_t y);
+static void mgf1_sha256(u8* mask, const u8* seed, size_t seed_len, size_t mask_len);
+static void i2osp(u8* output, u64 x, size_t len);
 
 rsa_ctx_t* rsa_ctx_init() {
   rsa_ctx_t* context = (rsa_ctx_t*) malloc(sizeof(rsa_ctx_t));
@@ -32,6 +38,77 @@ void rsa_ctx_free(rsa_ctx_t* context) {
     mpz_clears(context->n, context->e, context->d, NULL);
     free(context);
   }
+}
+
+void rsa_oaep_sha256_encrypt(rsa_ctx_t* context, u8* msg, size_t len) {
+  size_t k = sizeof_mpz(context->n);
+  size_t hLen = SHA256_DIGEST_LEN;
+  size_t max_len = k - 2*hLen - 2;
+  if (len > max_len) {
+    fprintf(stderr, "ERROR rsa encrypt message too long\n");
+    exit(1);
+  }
+
+  char* label = "";
+  u8* lHash;
+  sha3_256_wrapper((u8*) label, 0, &lHash);
+
+  // TODO explain this because i can
+  u8 db[k - hLen - 1];
+  memset(db, 0, sizeof(db));
+  memcpy(db, lHash, hLen);
+  db[sizeof(db) - (len + 1)] = 0x01;
+  memcpy(&db[sizeof(db) - len], msg, len);
+
+  u8 seed[hLen];
+  gen_rand_bytes(seed, hLen); 
+
+  u8 dbMask[sizeof(db)];
+  mgf1_sha256(dbMask, seed, sizeof(seed), sizeof(dbMask));
+
+  u8 maskedDb[sizeof(db)];
+  xor_bytes(maskedDb, db, dbMask, sizeof(db));
+
+  u8 seedMask[hLen];
+  mgf1_sha256(seedMask, maskedDb, sizeof(maskedDb), hLen);
+
+  u8 maskedSeed[hLen];
+  xor_bytes(maskedSeed, seed, seedMask, sizeof(maskedSeed));
+
+  u8 encoded_msg[k];
+  encoded_msg[0] = 0x00;
+  memcpy(encoded_msg + 1, maskedSeed, sizeof(maskedSeed));
+  memcpy(encoded_msg + 1 + sizeof(maskedSeed), maskedDb, sizeof(maskedDb));
+
+#ifndef NDEBUG
+  printf("DB:\n");
+  print_bytes(db, sizeof(db));
+  printf("\n");
+  printf("Seed:\n");
+  print_bytes(seed, sizeof(seed));
+  printf("\n");
+  printf("Mask:\n");
+  print_bytes(dbMask, sizeof(dbMask));
+  printf("\n");
+  printf("Masked DB:\n");
+  print_bytes(maskedDb, sizeof(maskedDb));
+  printf("\n");
+  printf("seed Mask:\n");
+  print_bytes(seedMask, sizeof(seedMask));
+  printf("\n");
+  printf("Masked seed:\n");
+  print_bytes(maskedSeed, sizeof(maskedSeed));
+  printf("\n");
+  printf("Encoded message:\n");
+  print_bytes(encoded_msg, sizeof(encoded_msg));
+  printf("\n");
+#endif
+
+  sha3_256_free(lHash);
+}
+
+void rsa_oaep_sha256_decrypt(rsa_ctx_t* context, u8* cryptogram, size_t len) {
+
 }
 
 static void gen_keys(rsa_ctx_t* context) {
@@ -194,4 +271,35 @@ static void extended_euclidian(mpz_t a, mpz_t b, mpz_t x, mpz_t y) {
   mpz_sub(y, x1, y);    // y = x1 - y = x1 - (a / b) * y1
   mpz_set(x, y1);       // x = y1
   mpz_clears(x1, y1, mod, NULL);
+}
+
+static void mgf1_sha256(u8* mask, const u8* seed, size_t seed_len, size_t mask_len) {
+  if (mask_len > 0x0100000000) {
+    fprintf(stderr, "ERROR MGF1 mask too long\n");
+    exit(1);
+  }
+
+  size_t hLen = SHA256_DIGEST_LEN;
+  size_t max = ceil((double) mask_len/hLen);
+  for (size_t i = 0; i < max; i++) {
+    // Converts integer type i to string of octets (bytes) from MSB to LSB
+    u8 counter[4];
+    i2osp(counter, i, sizeof(counter));
+    u8* hash, hash_input[seed_len + sizeof(counter)];
+
+    // We need to perform Hash(seed || counter)
+    memcpy(hash_input, seed, seed_len);
+    memcpy(hash_input + seed_len, &counter, sizeof(counter));
+    sha3_256_wrapper(hash_input, sizeof(hash_input), &hash);
+    // Now concatenate the result fo the hash into the output mask: mask = mask || Hash(seed || counter)
+    memcpy(mask, hash, min(hLen, mask_len - (i*hLen)));
+    mask += hLen;
+    sha3_256_free(hash);
+  }
+}
+
+static void i2osp(u8* output, u64 x, size_t len) {
+  for (size_t i = 1; i <= len; i++) {
+    output[i-1] = (x >> (len - i)*8) & 0xFF;
+  }
 }

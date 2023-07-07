@@ -56,7 +56,6 @@ static void increment_counter(aes_block_t* counter_block);
 static u8 gmul(u8 a, u8 b);
 static void xor_block_into_bytes(u8* bytes, const aes_block_t* state);
 static void xor_bytes_into_block(aes_block_t* state, const u8* bytes);
-static void gen_rand_bytes(u8* dest, size_t len);
 static void bytes_to_block(aes_block_t* state, const u8* bytes);
 
 #ifndef NDEBUG
@@ -361,12 +360,6 @@ static void xor_bytes_into_block(aes_block_t* state, const u8* bytes) {
     for (size_t j = 0; j < 4; j++) {
       state->bytes[j][i] ^= bytes[bcounter++];
     }
-  }
-}
-
-static void gen_rand_bytes(u8* dest, size_t len) {
-  for (size_t i = 0; i < len; i++) {
-    dest[i] = rand() % 0x100;
   }
 }
 
