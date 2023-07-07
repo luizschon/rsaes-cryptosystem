@@ -42,8 +42,8 @@ void rsa_ctx_free(rsa_ctx_t* context) {
   }
 }
 
-void rsa_oaep_sha256_encrypt(rsa_ctx_t* context, u8* msg, size_t len) {
-  size_t n_len = sizeof_mpz(context->n);
+void rsa_oaep_sha256_encrypt(mpz_t mod, mpz_t exp, u8* msg, size_t len) {
+  size_t n_len = sizeof_mpz(mod);
   u8 encoded_msg[n_len];
   oaep_sha256_encode(encoded_msg, msg, len, n_len);
   
@@ -54,18 +54,18 @@ void rsa_oaep_sha256_encrypt(rsa_ctx_t* context, u8* msg, size_t len) {
   gmp_printf("message rep: %Zd\n", message_rep);
 
   // Message representative was to be between 0 and n - 1
-  if (mpz_cmp(message_rep, context->n) >= 0 || mpz_cmp_ui(message_rep, 0) < 0) {
+  if (mpz_cmp(message_rep, mod) >= 0 || mpz_cmp_ui(message_rep, 0) < 0) {
     fprintf(stderr, "ERROR message representative out of range\n");
     exit(1);
   }
 
-  mpz_powm(cryptogram, message_rep, context->e, context->n);
+  mpz_powm(cryptogram, message_rep, exp, mod);
   gmp_printf("cryptogram: %Zd\n", cryptogram);
 
   mpz_clears(message_rep, cryptogram, NULL);
 }
 
-void rsa_oaep_sha256_decrypt(rsa_ctx_t* context, u8* cryptogram, size_t len) {
+void rsa_oaep_sha256_decrypt(mpz_t mod, mpz_t exp, u8* cryptogram, size_t len) {
 
 }
 

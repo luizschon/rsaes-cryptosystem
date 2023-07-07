@@ -10,7 +10,7 @@ typedef struct {
 
 rsa_ctx_t* rsa_ctx_init();
 void rsa_ctx_free(rsa_ctx_t*);
-void rsa_oaep_sha256_encrypt(rsa_ctx_t*, u8*, size_t);
-void rsa_oaep_sha256_decrypt(rsa_ctx_t*, u8*, size_t);
+void rsa_oaep_sha256_encrypt(mpz_t, mpz_t, u8*, size_t);
+void rsa_oaep_sha256_decrypt(mpz_t, mpz_t, u8*, size_t);
 
 #endif // __RSA_H
