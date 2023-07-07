@@ -103,6 +103,13 @@ void rsa_oaep_sha256_decrypt(mpz_t mod, mpz_t exp, mpz_t msg, size_t len) {
   u8 db[sizeof(maskedDb)];
   xor_bytes(db, maskedDb, dbMask, sizeof(maskedDb));
 
+  // Searches for special 0x01 byte inside DB, because we are sure that the message starts after it
+  size_t msg_start = hLen;
+  while (db[msg_start++] != 0x01);
+
+  u8 message[sizeof(db) - msg_start];
+  memcpy(message, db + msg_start, sizeof(message));
+
 #ifndef NDEBUG
   printf("===== DECRYPTION =====\n\n");
   printf("decrypted_size: %zu\n\n", decrypted_len);
@@ -121,6 +128,9 @@ void rsa_oaep_sha256_decrypt(mpz_t mod, mpz_t exp, mpz_t msg, size_t len) {
   print_bytes(dbMask, sizeof(dbMask));
   printf("\ndb: ");
   print_bytes(db, sizeof(db));
+  printf("\nmessage: ");
+  print_bytes(message, sizeof(message));
+  printf("\n");
 #endif
 
   mpz_clear(decrypted);
@@ -303,7 +313,6 @@ static void oaep_sha256_encode(u8* encoded_msg, const u8* msg, size_t len, size_
   u8* lHash;
   sha3_256_wrapper((u8*) label, 0, &lHash);
 
-  // TODO explain this because i can
   // allocate db sized vector
   u8 db[n_len - hLen - 1];
   // set all bytes to 0
