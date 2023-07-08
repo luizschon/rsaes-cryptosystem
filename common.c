@@ -1,6 +1,22 @@
 #include <stdio.h>
+#include <stdlib.h>
 #include <openssl/evp.h>
 #include "common.h"
+
+void* malloc_or_realloc(void* pointer, size_t size) {
+  if (pointer == NULL) {
+    pointer = malloc(size);
+  } else {
+    pointer = realloc(pointer, size);
+  }
+
+  if (pointer == NULL) {
+    fprintf(stderr, "ERROR: couldn't allocate memory\n");
+    exit(1);
+  }
+
+  return pointer;
+}
 
 void gen_rand_bytes(u8* dest, size_t len) {
   for (size_t i = 0; i < len; i++) {
