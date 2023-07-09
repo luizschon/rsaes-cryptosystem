@@ -59,23 +59,21 @@ rsa_result_t* rsa_encrypt(rsa_ctx_t* context, const u8* msg, size_t len) {
   size_t n_len = sizeof_mpz(context->n);
   rsa_result_t* res = (rsa_result_t*) malloc_or_panic(sizeof(rsa_result_t));
 
-  // Calculates number of blocks that will required to encrypt a message of size len
+  // Calculates number of blocks that will required to encrypt a message of size "len"
   size_t max_msg_len = n_len - 2*h_len - 2;
   size_t n_blocks = len / max_msg_len;
   bool should_add_partial_block = (len % max_msg_len > 0);
   n_blocks += should_add_partial_block;
 
-  // Creates output to acomodate all the ciphered blocks
+  // Allocates memory to store the output in the result struct. Since the result of the RSA-OAEP
+  // encryption is always the size in bytes of the RSA modulus, we can pre-compute the number of
+  // bytes our output will have based on the number of "blocks" we'll need to form
   res->len = n_blocks * n_len;
-
-  // Allocates memory to store the output, if it wasn't already allocated. If it was, reallocates
-  // memory to avoid an unexpected situation where the memory already allocated is smaller than
-  // necessary
   res->output = (u8*) malloc_or_panic(res->len);
 
-  // Cipher all blocks and save them continuously in the context output
   size_t block_idx = 0, msg_idx = 0;
 
+  // Cipher all blocks and save them contiguously in the result output
   for (size_t i = 0; i < n_blocks - 1; i++) {
     rsa_oaep_sha256_encrypt(context->n, context->e, &(res->output[block_idx]), &msg[msg_idx], max_msg_len);
     block_idx += n_len;
@@ -104,24 +102,25 @@ rsa_result_t* rsa_decrypt(rsa_ctx_t* context, const u8* crypt, size_t len) {
   rsa_result_t* res = (rsa_result_t*) malloc_or_panic(sizeof(rsa_result_t));
 
   // Calculates number of blocks that will required to decrypt the cryptogram (should be a multiple
-  // of n_len)
+  // of size of RSA modulus in bytes)
   assert(len % n_len == 0);
   size_t n_blocks = len / n_len;
 
-  // Allocates memory to store the output, if it wasn't already allocated. If it was, reallocates
-  // memory to avoid an unexpected situation where the memory already allocated is smaller than
-  // necessary
+  // Allocates memory to store the output in the result struct with the max possible size, so we don't
+  // have to deal with buffer overflows
   res->output = (u8*) malloc_or_panic(n_blocks * (n_len - 2*h_len - 2));
   res->len = 0;
 
-  // Cipher all blocks and save them continuously in the context output
   size_t block_idx = 0, msg_idx = 0;
 
+  // Decipher all blocks and save them contiguously in the result output
   for (size_t i = 0; i < n_blocks; i++) {
     size_t msg_len = rsa_oaep_sha256_decrypt(context->n, context->d, &(res->output[msg_idx]), &crypt[block_idx]);
     block_idx += n_len;
     msg_idx += msg_len;
   }
+  // After all blocks have been deciphered, we can be sure the the result length is the sum of the
+  // message lengths combined
   res->len = msg_idx;
 
 #ifndef NDEBUG
