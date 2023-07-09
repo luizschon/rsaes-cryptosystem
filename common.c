@@ -56,7 +56,7 @@ void print_words(const u32* words, const size_t len) {
   printf("\n");
 }
 
-int sizeof_mpz(mpz_t big_int) {
+int sizeof_mpz(const mpz_t big_int) {
   int n_bits = mpz_sizeinbase(big_int, 2);
   return (n_bits/8 + (n_bits % 8 > 0));
 } 

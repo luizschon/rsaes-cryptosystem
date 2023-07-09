@@ -18,7 +18,7 @@ void gen_rand_bytes(u8* dest, size_t len);
 void xor_bytes(u8* dest, const u8* src1, const u8* src2, size_t len);
 void print_bytes(const u8* bytes, const size_t len);
 void print_words(const u32* words, const size_t len);
-int sizeof_mpz(mpz_t big_int);
+int sizeof_mpz(const mpz_t big_int);
 void sha3_256_wrapper(const u8* message, size_t message_len, u8** digest);
 void sha3_256_free(u8* digest);
 
