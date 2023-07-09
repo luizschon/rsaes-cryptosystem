@@ -6,15 +6,17 @@
 
 typedef struct {
     mpz_t n, e, d;
-    size_t out_len;
-    u8* output;
 } rsa_ctx_t;
+
+typedef struct {
+    u8* output;
+    size_t len;
+} rsa_result_t;
 
 rsa_ctx_t* rsa_ctx_init();
 void rsa_ctx_free(rsa_ctx_t*);
-void rsa_encrypt(rsa_ctx_t*, const u8*, size_t);
-void rsa_decrypt(rsa_ctx_t*, const u8*, size_t);
-void rsa_oaep_sha256_encrypt(const mpz_t, const mpz_t, u8*, const u8*, size_t);
-size_t rsa_oaep_sha256_decrypt(const mpz_t, const mpz_t, u8*, const u8*);
+void rsa_result_free(rsa_result_t*);
+rsa_result_t* rsa_encrypt(rsa_ctx_t*, const u8*, size_t);
+rsa_result_t* rsa_decrypt(rsa_ctx_t*, const u8*, size_t);
 
 #endif // __RSA_H

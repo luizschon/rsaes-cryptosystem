@@ -3,6 +3,18 @@
 #include <openssl/evp.h>
 #include "common.h"
 
+void* malloc_or_panic(size_t size) {
+  void* pointer = NULL;
+  pointer = malloc(size);
+
+  if (pointer == NULL) {
+    fprintf(stderr, "ERROR: couldn't allocate memory\n");
+    exit(1);
+  }
+
+  return pointer;
+}
+
 void* malloc_or_realloc(void* pointer, size_t size) {
   if (pointer == NULL) {
     pointer = malloc(size);

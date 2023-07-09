@@ -23,12 +23,14 @@ int main(int argc, char** argv) {
   aes_128_ctx_free(aes_context);
 
   rsa_ctx_t* rsa_context = rsa_ctx_init();
-  rsa_encrypt(rsa_context, message, sizeof(message));
-  rsa_decrypt(rsa_context, rsa_context->output, rsa_context->out_len);
+  rsa_result_t* res_encrypt = rsa_encrypt(rsa_context, message, sizeof(message));
+  rsa_result_t* res_decrypt = rsa_decrypt(rsa_context, res_encrypt->output, res_encrypt->len);
   rsa_ctx_free(rsa_context);
   printf("Real message:\n");
   print_bytes(message, sizeof(message));
   printf("\n");
+  rsa_result_free(res_encrypt);
+  rsa_result_free(res_decrypt);
 
   return 0;
 }
