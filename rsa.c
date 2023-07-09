@@ -90,7 +90,7 @@ rsa_result_t* rsa_encrypt(rsa_ctx_t* context, const u8* msg, size_t len) {
   }
 
 #ifndef NDEBUG
-  printf("Ciphered msg:\n", n_blocks);
+  printf("Ciphered msg:\n");
   print_bytes(res->output, res->len);
   printf("\n");
 #endif
@@ -138,10 +138,6 @@ static void rsa_oaep_sha256_encrypt(const mpz_t mod, const mpz_t exp, u8* crypt,
   u8 encoded_msg[n_len];
   oaep_sha256_encode(encoded_msg, msg, len, n_len);
 
-  printf("Original encoded message:\n");
-  print_bytes(encoded_msg, n_len);
-  printf("\n");
-
   // Interpret encoded message as MSB first, so that the byte 0x00 (locate at idx 0 of the encoded
   // message) can also be the MSB of the integer value, respecting the range set by the RSA
   // encryption (0 <= message representative <= n-1)
@@ -149,25 +145,15 @@ static void rsa_oaep_sha256_encrypt(const mpz_t mod, const mpz_t exp, u8* crypt,
   mpz_inits(message_rep, cryptogram_rep, NULL);
   mpz_import(message_rep, sizeof(encoded_msg), MSB_FIRST, sizeof(encoded_msg[0]), 0, 0, encoded_msg);
 
-  if (mpz_cmp(message_rep, mod) >= 0) {
-    printf("Message rep bigger than n - 1\n");
-  } else if (mpz_cmp_ui(message_rep, 0) < 0) {
-    printf("Message rep smaller than 0\n");
-  }
   // Message representative was to be between 0 and n - 1
   if (mpz_cmp(message_rep, mod) >= 0 || mpz_cmp_ui(message_rep, 0) < 0) {
-    fprintf(stderr, "ERROR message representative out of range\n");
+    fprintf(stderr, "ERROR: message representative out of range\n");
     exit(1);
   }
 
   mpz_powm(cryptogram_rep, message_rep, exp, mod);
   mpz_export(crypt, NULL, MSB_FIRST, sizeof(crypt[0]), 0, 0, cryptogram_rep);
 
-#ifndef NDEGUG
-  gmp_printf("Message exported:\n%Zd\n\n", message_rep);
-  gmp_printf("Cryptogram exported:\n%Zd\n\n", cryptogram_rep);
-  printf("\n");
-#endif
   mpz_clears(message_rep, cryptogram_rep, NULL);
 }
 
@@ -175,8 +161,9 @@ static size_t rsa_oaep_sha256_decrypt(const mpz_t mod, const mpz_t exp, u8* msg,
   size_t n_len = sizeof_mpz(mod);
   size_t hLen = SHA256_DIGEST_LEN;
 
+  // Sanity check
   if (n_len < 2*hLen + 1) {
-    fprintf(stderr, "ERROR rsa decryption error\n");
+    fprintf(stderr, "ERROR: rsa decryption error\n");
     exit(1);
   }
   
@@ -186,19 +173,14 @@ static size_t rsa_oaep_sha256_decrypt(const mpz_t mod, const mpz_t exp, u8* msg,
   mpz_inits(cryptogram_rep, message_rep, NULL);
   mpz_import(cryptogram_rep, n_len, MSB_FIRST, sizeof(crypt[0]), 0, 0, crypt);
 
-  if (mpz_cmp(cryptogram_rep, mod) >= 0) {
-    printf("Cryptogram rep bigger than n - 1\n");
-  } else if (mpz_cmp_ui(cryptogram_rep, 0) < 0) {
-    printf("Cryptogram rep smaller than 0\n");
-  }
   // Cryptogram representative was to be between 0 and n - 1
   if (mpz_cmp(cryptogram_rep, mod) >= 0 || mpz_cmp_ui(cryptogram_rep, 0) < 0) {
-    fprintf(stderr, "ERROR cryptogram representative out of range\n");
+    fprintf(stderr, "ERROR: cryptogram representative out of range\n");
     exit(1);
   }
 
   // The decryption result of the cryptogram representative results in the message representative of
-  // out OAEP encoded message. But, recall that the special 0x00 byte is placed in the MSB of the
+  // out OAEP encoded message. But recall that the special 0x00 byte is placed in the MSB of the
   // message representative, so we'll need to manually place it int the encoded message array, since
   // zeros to the left are ignored in the GMP library
   mpz_powm(message_rep, cryptogram_rep, exp, mod);
@@ -206,21 +188,7 @@ static size_t rsa_oaep_sha256_decrypt(const mpz_t mod, const mpz_t exp, u8* msg,
   u8 encoded_msg[n_len];
   encoded_msg[0] = 0x00;  // Place special byte 0x00 of the encoded OAEP message
   mpz_export(encoded_msg + 1, NULL, MSB_FIRST, sizeof(encoded_msg[0]), 0, 0, message_rep);
-
-#ifndef NDEGUG
-  gmp_printf("Cryptogram imported:\n%Zd\n\n", cryptogram_rep);
-  printf("Cryptogram imported (size = %lu):\n", n_len);
-  print_bytes(crypt, n_len);
-  printf("\n");
-  gmp_printf("Message imported:\n%Zd\n\n", message_rep);
-  gmp_printf("Message as hex: \n%#Zx\n\n", message_rep);
-#endif
-
   mpz_clears(cryptogram_rep, message_rep, NULL);
-
-  printf("Recieved encoded message:\n");
-  print_bytes(encoded_msg, n_len);
-  printf("\n");
 
   return oaep_sha256_decode(msg, encoded_msg, n_len);
 }
@@ -229,11 +197,13 @@ static void oaep_sha256_encode(u8* encoded_msg, const u8* msg, size_t len, size_
   size_t hLen = SHA256_DIGEST_LEN;
   size_t max_len = n_len - 2*hLen - 2;
 
+  // Check if message is in the correct range
   if (len > max_len) {
-    fprintf(stderr, "ERROR rsa encrypt message too long\n");
+    fprintf(stderr, "ERROR: rsa encrypt message too long\n");
     exit(1);
   }
 
+  // Label hash (optional). We'll be using an empty string
   char* label = "";
   u8* lHash;
   sha3_256_wrapper((u8*) label, 0, &lHash);
@@ -250,6 +220,8 @@ static void oaep_sha256_encode(u8* encoded_msg, const u8* msg, size_t len, size_
   memcpy(&db[sizeof(db) - len], msg, len);
   // result db = lHash || padding 0's || 0x01 || msg
 
+  // OAEP encode procedure:
+
   u8 seed[hLen];
   gen_rand_bytes(seed, hLen); 
 
@@ -265,6 +237,7 @@ static void oaep_sha256_encode(u8* encoded_msg, const u8* msg, size_t len, size_
   u8 maskedSeed[hLen];
   xor_bytes(maskedSeed, seed, seedMask, sizeof(maskedSeed));
 
+  // Forming encoded message: 0x00 || maskedSeed || maskedDB
   encoded_msg[0] = 0x00;
   memcpy(encoded_msg + 1, maskedSeed, sizeof(maskedSeed));
   memcpy(encoded_msg + 1 + sizeof(maskedSeed), maskedDb, sizeof(maskedDb));
@@ -275,9 +248,7 @@ static void oaep_sha256_encode(u8* encoded_msg, const u8* msg, size_t len, size_
 static size_t oaep_sha256_decode(u8* msg, const u8* encoded_msg, size_t n_len) {
   size_t hLen = SHA256_DIGEST_LEN;
 
-  printf("Encoded message:\n");
-  print_bytes(encoded_msg, n_len);
-  printf("\n");
+  // OAEP decode procedure: 
 
   u8 maskedSeed[hLen];
   memcpy(maskedSeed, &encoded_msg[1], hLen);
@@ -301,15 +272,15 @@ static size_t oaep_sha256_decode(u8* msg, const u8* encoded_msg, size_t n_len) {
   size_t msg_start = hLen;
   while (msg_start < sizeof(db) && db[msg_start++] != 0x01);
 
+  // Sanity check, makes sure the 0x01 byte was found
   if (msg_start >= sizeof(db)) {
-    fprintf(stderr, "ERROR nao foi possivel encontrar o byte 0x01 no db\n");
+    fprintf(stderr, "ERROR: byte 0x01 not found in DB\n");
     exit(1);
   }
 
   // Copy message bytes into msg pointer and return its size
   size_t msg_len = sizeof(db) - msg_start;
   memcpy(msg, db + msg_start, msg_len);
-
   return msg_len;
 }
 
@@ -478,7 +449,7 @@ static void extended_euclidian(mpz_t a, mpz_t b, mpz_t x, mpz_t y) {
 
 static void mgf1_sha256(u8* mask, const u8* seed, size_t seed_len, size_t mask_len) {
   if (mask_len > 0x0100000000) {
-    fprintf(stderr, "ERROR MGF1 mask too long\n");
+    fprintf(stderr, "ERROR: MGF1 mask too long\n");
     exit(1);
   }
 
