@@ -12,6 +12,7 @@
 #define RSA_KEY_SIZE 1024
 #define RSA_PUBLIC_EXP 65537
 #define SHA256_DIGEST_LEN 32
+#define MSB_FIRST 1
 
 static void rsa_oaep_sha256_encrypt(const mpz_t, const mpz_t, u8*, const u8*, size_t);
 static size_t rsa_oaep_sha256_decrypt(const mpz_t, const mpz_t, u8*, const u8*);
@@ -136,10 +137,17 @@ static void rsa_oaep_sha256_encrypt(const mpz_t mod, const mpz_t exp, u8* crypt,
   size_t n_len = sizeof_mpz(mod);
   u8 encoded_msg[n_len];
   oaep_sha256_encode(encoded_msg, msg, len, n_len);
-  
+
+  printf("Original encoded message:\n");
+  print_bytes(encoded_msg, n_len);
+  printf("\n");
+
+  // Interpret encoded message as MSB first, so that the byte 0x00 (locate at idx 0 of the encoded
+  // message) can also be the MSB of the integer value, respecting the range set by the RSA
+  // encryption (0 <= message representative <= n-1)
   mpz_t message_rep, cryptogram_rep;
   mpz_inits(message_rep, cryptogram_rep, NULL);
-  mpz_import(message_rep, sizeof(encoded_msg), -1, sizeof(encoded_msg[0]), 0, 0, encoded_msg);
+  mpz_import(message_rep, sizeof(encoded_msg), MSB_FIRST, sizeof(encoded_msg[0]), 0, 0, encoded_msg);
 
   if (mpz_cmp(message_rep, mod) >= 0) {
     printf("Message rep bigger than n - 1\n");
@@ -153,15 +161,13 @@ static void rsa_oaep_sha256_encrypt(const mpz_t mod, const mpz_t exp, u8* crypt,
   }
 
   mpz_powm(cryptogram_rep, message_rep, exp, mod);
-  size_t counter = 0;
-  mpz_export(crypt, &counter, -1, 1, 0, 0, cryptogram_rep);
+  mpz_export(crypt, NULL, MSB_FIRST, sizeof(crypt[0]), 0, 0, cryptogram_rep);
 
 #ifndef NDEGUG
-  printf("Cryptogram (size = %lu):\n", counter);
-  print_bytes(crypt, counter);
+  gmp_printf("Message exported:\n%Zd\n\n", message_rep);
+  gmp_printf("Cryptogram exported:\n%Zd\n\n", cryptogram_rep);
   printf("\n");
 #endif
-
   mpz_clears(message_rep, cryptogram_rep, NULL);
 }
 
@@ -174,16 +180,11 @@ static size_t rsa_oaep_sha256_decrypt(const mpz_t mod, const mpz_t exp, u8* msg,
     exit(1);
   }
   
+  // Since our message representative was encrypted by interpreting the encoded OAEP message as MSB
+  // first, we need to interpret the cryptogram byte stream as MSB first as well.
   mpz_t cryptogram_rep, message_rep;
   mpz_inits(cryptogram_rep, message_rep, NULL);
-  mpz_import(cryptogram_rep, n_len, -1, sizeof(crypt[0]), 0, 0, crypt);
-
-#ifndef NDEBUG
-  printf("Cryptogram inside decrypt:\n");
-  print_bytes(crypt, n_len);
-  printf("\n");
-  gmp_printf("Cryptogram rep:\n%Zd\n\n", cryptogram_rep);
-#endif
+  mpz_import(cryptogram_rep, n_len, MSB_FIRST, sizeof(crypt[0]), 0, 0, crypt);
 
   if (mpz_cmp(cryptogram_rep, mod) >= 0) {
     printf("Cryptogram rep bigger than n - 1\n");
@@ -196,11 +197,30 @@ static size_t rsa_oaep_sha256_decrypt(const mpz_t mod, const mpz_t exp, u8* msg,
     exit(1);
   }
 
+  // The decryption result of the cryptogram representative results in the message representative of
+  // out OAEP encoded message. But, recall that the special 0x00 byte is placed in the MSB of the
+  // message representative, so we'll need to manually place it int the encoded message array, since
+  // zeros to the left are ignored in the GMP library
   mpz_powm(message_rep, cryptogram_rep, exp, mod);
 
   u8 encoded_msg[n_len];
-  mpz_export(encoded_msg, NULL, -1, sizeof(encoded_msg[0]), 0, 0, message_rep);
+  encoded_msg[0] = 0x00;  // Place special byte 0x00 of the encoded OAEP message
+  mpz_export(encoded_msg + 1, NULL, MSB_FIRST, sizeof(encoded_msg[0]), 0, 0, message_rep);
+
+#ifndef NDEGUG
+  gmp_printf("Cryptogram imported:\n%Zd\n\n", cryptogram_rep);
+  printf("Cryptogram imported (size = %lu):\n", n_len);
+  print_bytes(crypt, n_len);
+  printf("\n");
+  gmp_printf("Message imported:\n%Zd\n\n", message_rep);
+  gmp_printf("Message as hex: \n%#Zx\n\n", message_rep);
+#endif
+
   mpz_clears(cryptogram_rep, message_rep, NULL);
+
+  printf("Recieved encoded message:\n");
+  print_bytes(encoded_msg, n_len);
+  printf("\n");
 
   return oaep_sha256_decode(msg, encoded_msg, n_len);
 }
