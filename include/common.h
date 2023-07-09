@@ -12,6 +12,7 @@ typedef uint8_t u8;
 typedef uint32_t u32;
 typedef uint64_t u64;
 
+void* malloc_or_realloc(void* pointer, size_t size);
 void gen_rand_bytes(u8* dest, size_t len);
 void xor_bytes(u8* dest, const u8* src1, const u8* src2, size_t len);
 void print_bytes(const u8* bytes, const size_t len);

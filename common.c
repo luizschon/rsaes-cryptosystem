@@ -1,6 +1,22 @@
 #include <stdio.h>
+#include <stdlib.h>
 #include <openssl/evp.h>
 #include "common.h"
+
+void* malloc_or_realloc(void* pointer, size_t size) {
+  if (pointer == NULL) {
+    pointer = malloc(size);
+  } else {
+    pointer = realloc(pointer, size);
+  }
+
+  if (pointer == NULL) {
+    fprintf(stderr, "ERROR: couldn't allocate memory\n");
+    exit(1);
+  }
+
+  return pointer;
+}
 
 void gen_rand_bytes(u8* dest, size_t len) {
   for (size_t i = 0; i < len; i++) {
@@ -55,9 +71,9 @@ void sha3_256_wrapper(const u8* message, size_t message_len, u8** digest) {
   EVP_MD_CTX_free(md_ctx);
 
 #ifndef NDEBUG
-  printf("SHA digest: ");
-  print_bytes(*digest, digest_len);
-  printf("\n");
+  /*printf("SHA digest: ");*/
+  /*print_bytes(*digest, digest_len);*/
+  /*printf("\n");*/
 #endif
 }
 
