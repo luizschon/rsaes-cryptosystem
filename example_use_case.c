@@ -24,11 +24,11 @@ int main(int argc, char** argv) {
 
   rsa_ctx_t* rsa_context = rsa_ctx_init();
   rsa_encrypt(rsa_context, message, sizeof(message));
-  printf("Res encrypt: ");
-  print_bytes(rsa_context->output, rsa_context->out_len);
-  printf("\n");
   rsa_decrypt(rsa_context, rsa_context->output, rsa_context->out_len);
   rsa_ctx_free(rsa_context);
+  printf("Real message:\n");
+  print_bytes(message, sizeof(message));
+  printf("\n");
 
   return 0;
 }

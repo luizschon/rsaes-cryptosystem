@@ -67,27 +67,24 @@ void rsa_encrypt(rsa_ctx_t* context, const u8* msg, size_t len) {
 
   // Cipher all blocks and save them continuously in the context output
   size_t block_idx = 0, msg_idx = 0;
+
   for (size_t i = 0; i < n_blocks - 1; i++) {
-    printf("pointer output: %p\n", context->output);
-    rsa_oaep_sha256_encrypt(context->n, context->e, &context->output[block_idx], &msg[msg_idx], max_msg_len);
-#ifndef NDEBUG
-    printf("Ciphered msg %d: ", i+1);
-    print_bytes(context->output, n_len);
-#endif
+    rsa_oaep_sha256_encrypt(context->n, context->e, &(context->output[block_idx]), &msg[msg_idx], max_msg_len);
     block_idx += n_len;
     msg_idx += max_msg_len;
   }
-  printf("pointer output: %p\n", context->output);
+
   // Cipher last block, whose message could be smaller than the max size of the message
   if (should_add_partial_block) {
-    rsa_oaep_sha256_encrypt(context->n, context->e, &context->output[block_idx], &msg[msg_idx], len % max_msg_len);
+    rsa_oaep_sha256_encrypt(context->n, context->e, &(context->output[block_idx]), &msg[msg_idx], len % max_msg_len);
   } else {
-    rsa_oaep_sha256_encrypt(context->n, context->e, &context->output[block_idx], &msg[msg_idx], max_msg_len);
+    rsa_oaep_sha256_encrypt(context->n, context->e, &(context->output[block_idx]), &msg[msg_idx], max_msg_len);
   }
 
 #ifndef NDEBUG
-    printf("Ciphered msg %d: ", n_blocks);
-    print_bytes(context->output, n_len);
+  printf("Ciphered msg: ", n_blocks);
+  print_bytes(context->output, context->out_len);
+  printf("\n");
 #endif
 }
 
@@ -95,69 +92,113 @@ void rsa_decrypt(rsa_ctx_t* context, const u8* crypt, size_t len) {
   size_t h_len = SHA256_DIGEST_LEN;
   size_t n_len = sizeof_mpz(context->n);
 
+#ifndef NDEBUG
+  printf("Cryptogram:\n");
+  print_bytes(crypt, len);
+  printf("\n");
+#endif
+
   // Calculates number of blocks that will required to decrypt the cryptogram (should be a multiple
   // of n_len)
-  assert(len % n_len);
+  assert(len % n_len == 0);
   size_t n_blocks = len / n_len;
 
   // Allocates memory to store the output, if it wasn't already allocated. If it was, reallocates
   // memory to avoid an unexpected situation where the memory already allocated is smaller than
   // necessary
+  u8 input_copy[len];
+  memcpy(input_copy, crypt, len);
   context->output = malloc_or_realloc(context->output, n_blocks * (n_len - 2*h_len - 2));
   context->out_len = 0;
 
   // Cipher all blocks and save them continuously in the context output
+  size_t block_idx = 0, msg_idx = 0;
+
   for (size_t i = 0; i < n_blocks; i++) {
-    size_t msg_len = rsa_oaep_sha256_decrypt(context->n, context->d, crypt, context->output);
-#ifndef NDEBUG
-    printf("Deciphered msg %d: ", i+1);
-    print_bytes(context->output, msg_len);
-#endif
-    context->output += n_len;
-    context->out_len += msg_len;
+    size_t msg_len = rsa_oaep_sha256_decrypt(context->n, context->d, &(context->output[msg_idx]), &input_copy[block_idx]);
+    block_idx += n_len;
+    msg_idx += msg_len;
   }
+  context->out_len += msg_idx;
+
+#ifndef NDEBUG
+  printf("Deciphered msg: ");
+  print_bytes(context->output, context->out_len);
+  printf("\n");
+#endif
 }
 
-void rsa_oaep_sha256_encrypt(const mpz_t mod, const mpz_t exp, u8* c, const u8* msg, size_t len) {
+void rsa_oaep_sha256_encrypt(const mpz_t mod, const mpz_t exp, u8* crypt, const u8* msg, size_t len) {
   size_t n_len = sizeof_mpz(mod);
   u8 encoded_msg[n_len];
   oaep_sha256_encode(encoded_msg, msg, len, n_len);
   
-  mpz_t message_rep, cryptogram;
-  mpz_inits(message_rep, cryptogram, NULL);
+  mpz_t message_rep, cryptogram_rep;
+  mpz_inits(message_rep, cryptogram_rep, NULL);
   mpz_import(message_rep, sizeof(encoded_msg), -1, sizeof(encoded_msg[0]), 0, 0, encoded_msg);
 
+  if (mpz_cmp(message_rep, mod) >= 0) {
+    printf("Message rep bigger than n - 1\n");
+  } else if (mpz_cmp_ui(message_rep, 0) < 0) {
+    printf("Message rep smaller than 0\n");
+  }
   // Message representative was to be between 0 and n - 1
   if (mpz_cmp(message_rep, mod) >= 0 || mpz_cmp_ui(message_rep, 0) < 0) {
     fprintf(stderr, "ERROR message representative out of range\n");
     exit(1);
   }
 
-  mpz_powm(cryptogram, message_rep, exp, mod);
-  gmp_printf("cryptogram: %Zd\n\n", cryptogram);
-  mpz_export(c, NULL, -1, 1, 0, 0, cryptogram);
+  mpz_powm(cryptogram_rep, message_rep, exp, mod);
+  size_t counter = 0;
+  mpz_export(crypt, &counter, -1, 1, 0, 0, cryptogram_rep);
 
-  mpz_clears(message_rep, cryptogram, NULL);
+#ifndef NDEGUG
+  printf("Cryptogram (size = %lu):\n", counter);
+  print_bytes(crypt, counter);
+  printf("\n");
+#endif
+
+  mpz_clears(message_rep, cryptogram_rep, NULL);
 }
 
-size_t rsa_oaep_sha256_decrypt(const mpz_t mod, const mpz_t exp, u8* crypt, const u8* msg) {
+size_t rsa_oaep_sha256_decrypt(const mpz_t mod, const mpz_t exp, u8* msg, const u8* crypt) {
   size_t n_len = sizeof_mpz(mod);
   size_t hLen = SHA256_DIGEST_LEN;
-  
-  if (n_len < 2*hLen + 2) {
+
+  if (n_len < 2*hLen + 1) {
     fprintf(stderr, "ERROR rsa decryption error\n");
     exit(1);
   }
+  
+  mpz_t cryptogram_rep, message_rep;
+  mpz_inits(cryptogram_rep, message_rep, NULL);
+  mpz_import(cryptogram_rep, n_len, -1, sizeof(crypt[0]), 0, 0, crypt);
 
-  mpz_t decrypted;
-  mpz_init(decrypted);
-  mpz_powm(decrypted, msg, exp, mod);
+#ifndef NDEBUG
+  printf("Cryptogram inside decrypt:\n");
+  print_bytes(crypt, n_len);
+  printf("\n");
+  gmp_printf("Cryptogram rep:\n%Zd\n\n", cryptogram_rep);
+#endif
 
-  u8 encoded_msg[n_len], message[n_len - hLen - 1];
-  mpz_export(encoded_msg, NULL, -1, 1, 0, 0, decrypted);
-  mpz_clear(decrypted);
+  if (mpz_cmp(cryptogram_rep, mod) >= 0) {
+    printf("Cryptogram rep bigger than n - 1\n");
+  } else if (mpz_cmp_ui(cryptogram_rep, 0) < 0) {
+    printf("Cryptogram rep smaller than 0\n");
+  }
+  // Cryptogram representative was to be between 0 and n - 1
+  if (mpz_cmp(cryptogram_rep, mod) >= 0 || mpz_cmp_ui(cryptogram_rep, 0) < 0) {
+    fprintf(stderr, "ERROR cryptogram representative out of range\n");
+    exit(1);
+  }
 
-  return oaep_sha256_decode(message, encoded_msg, n_len);
+  mpz_powm(message_rep, cryptogram_rep, exp, mod);
+
+  u8 encoded_msg[n_len];
+  mpz_export(encoded_msg, NULL, -1, sizeof(encoded_msg[0]), 0, 0, message_rep);
+  mpz_clears(cryptogram_rep, message_rep, NULL);
+
+  return oaep_sha256_decode(msg, encoded_msg, n_len);
 }
 
 static void gen_keys(rsa_ctx_t* context) {
@@ -399,7 +440,9 @@ static void oaep_sha256_encode(u8* encoded_msg, const u8* msg, size_t len, size_
 static size_t oaep_sha256_decode(u8* msg, const u8* encoded_msg, size_t n_len) {
   size_t hLen = SHA256_DIGEST_LEN;
 
-  u8 y = encoded_msg[0];
+  printf("Encoded message:\n");
+  print_bytes(encoded_msg, n_len);
+  printf("\n");
 
   u8 maskedSeed[hLen];
   memcpy(maskedSeed, &encoded_msg[1], hLen);
@@ -421,7 +464,12 @@ static size_t oaep_sha256_decode(u8* msg, const u8* encoded_msg, size_t n_len) {
   // Searches for special 0x01 byte inside DB, because we are sure that the message starts after it
   // so we can compute the size of the message
   size_t msg_start = hLen;
-  while (db[msg_start++] != 0x01);
+  while (msg_start < sizeof(db) && db[msg_start++] != 0x01);
+
+  if (msg_start >= sizeof(db)) {
+    fprintf(stderr, "ERROR nao foi possivel encontrar o byte 0x01 no db\n");
+    exit(1);
+  }
 
   // Copy message bytes into msg pointer and return its size
   size_t msg_len = sizeof(db) - msg_start;
@@ -430,22 +478,28 @@ static size_t oaep_sha256_decode(u8* msg, const u8* encoded_msg, size_t n_len) {
 
 #ifndef NDEBUG
   printf("===== OAEP DECODE =====\n\n");
-  printf("Encoded after decrytion: ");
+  printf("Encoded message:\n");
   print_bytes(encoded_msg, n_len);
-  printf("\nY: %02x\n\n", y);
-  printf("\nseed: ");
-  print_bytes(seed, sizeof(seed));
-  printf("seedMask: ");
-  print_bytes(seedMask, hLen);
-  printf("maskedSeed: ");
-  print_bytes(maskedSeed, hLen);
-  printf("\nmaskedDb: ");
+  printf("\n");
+  printf("Masked seed:\n");
+  print_bytes(maskedSeed, sizeof(maskedSeed));
+  printf("\n");
+  printf("seed Mask:\n");
+  print_bytes(seedMask, sizeof(seedMask));
+  printf("\n");
+  printf("Masked DB:\n");
   print_bytes(maskedDb, sizeof(maskedDb));
-  printf("\ndbMask: ");
+  printf("\n");
+  printf("Mask:\n");
   print_bytes(dbMask, sizeof(dbMask));
-  printf("\ndb: ");
+  printf("\n");
+  printf("Seed:\n");
+  print_bytes(seed, sizeof(seed));
+  printf("\n");
+  printf("DB:\n");
   print_bytes(db, sizeof(db));
-  printf("\nmessage: ");
+  printf("\n");
+  printf("Message:\n");
   print_bytes(msg, msg_len);
   printf("\n");
 #endif
