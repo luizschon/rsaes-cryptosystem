@@ -307,7 +307,7 @@ static void gen_keys(rsa_ctx_t* context) {
   mpz_inits(phi_n, gcd, p_minus_one, q_minus_one, NULL);
   mpz_sub_ui(p_minus_one, p, 1);
   mpz_sub_ui(q_minus_one, q, 1);
-  mpz_mul(phi_n, p_minus_one, q_minus_one); // Computes λ(n) = (p - 1)*(q - 1)
+  mpz_mul(phi_n, p_minus_one, q_minus_one); // Computes φ(n) = (p - 1)*(q - 1)
 
   // TODO: this will do, but maybe there's a better way to generate E? This seems to be a very
   // common value used for e (efficient) and other options may be computationally intensive
@@ -351,8 +351,6 @@ static void gen_prime(mpz_t prime, size_t num_bits, gmp_randstate_t rand_state) 
     mpz_setbit(prime, num_bits - 1);  // Set (num_bits)th and 1st bit as 1 so the number 
     mpz_setbit(prime, 0);             // is guaranteed to be bigger than 2^(n_bits-1)-1
                                       // and odd.
-    mpz_setbit(prime, num_bits - 2);  // TODO research how to solve the problem of the message being
-                                      // encrypted being bigger than n - 1
   } while (!is_probably_prime(prime, rand_state));
 }
 
