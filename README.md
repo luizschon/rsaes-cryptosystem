@@ -1,4 +1,4 @@
-# RSA signature generator/verifier
+# RSAES Cryptosystem
 
 ## Integrantes da dupla
 
