@@ -64,11 +64,7 @@ static void print_state(const aes_block_t* state);
 
 // Function bodies
 void aes_128_gen_key(u8* k) {
-#ifndef NDEBUG
-  memcpy(k, test_k, AES_128_KEY_LEN);
-#else
   gen_rand_bytes(k, AES_128_KEY_LEN);
-#endif
 }
 
 aes_ctx_t* aes_128_ctx_init(aes_key_t* key, u64* iv, u32* nonce) {
@@ -83,21 +79,13 @@ aes_ctx_t* aes_128_ctx_init(aes_key_t* key, u64* iv, u32* nonce) {
   key_expansion(context->key, context->expanded_key, AES_128_N_RNDS);
 
   if (iv == NULL) {
-#ifndef NDEBUG
-    memcpy(&(context->iv), test_iv, sizeof(test_iv));
-#else
     gen_rand_bytes((u8*) &(context->iv), sizeof(context->iv));
-#endif
   } else {
     context->iv = *iv;
   }
 
   if (nonce == NULL) {
-#ifndef NDEBUG
-    memcpy(&(context->nonce), test_nonce, sizeof(test_nonce));
-#else
     gen_rand_bytes((u8*) &(context->nonce), sizeof(context->nonce));
-#endif
   } else {
     context->nonce = *nonce;
   }

@@ -1,3 +1,6 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #include "cryptosystem.h"
 #include "common.h"
 
@@ -21,7 +24,7 @@ cs_result_t* cs_hybrid_encrypt(aes_ctx_t* aes_ctx, mpz_t rsa_mod, mpz_t rsa_exp,
   memcpy(&(aes_params.key), aes_ctx->key, sizeof(aes_key_t));
 
   // Cipher aes params using RSA public key
-  rsa_result_t* rsa_result = rsa_encrypt(rsa_mod, rsa_exp, &aes_params, sizeof(aes_params));
+  rsa_result_t* rsa_result = rsa_encrypt(rsa_mod, rsa_exp, (u8*) &aes_params, sizeof(aes_params));
 
   // We will add the encrypted AES message and the RSA encrypted AES params into the resulting cryptogram
   res->len = aes_result->len + rsa_result->len;
@@ -48,7 +51,7 @@ cs_result_t* cs_hybrid_decrypt(mpz_t mod, mpz_t exp, const u8* crypt, size_t len
   memcpy(&aes_params, rsa_result->output, sizeof(aes_params));
 
   // Decrypt AES message in the beginning of the cryptogram using the params provided
-  aes_ctx_t* aes_ctx = aes_128_ctx_init(aes_params.key, &(aes_params.iv), &(aes_params.nonce));
+  aes_ctx_t* aes_ctx = aes_128_ctx_init((aes_key_t*) aes_params.key, &(aes_params.iv), &(aes_params.nonce));
   aes_result_t* aes_result = aes_128_decrypt(aes_ctx, crypt, len - n_len);
 
   // Allocates memory to store the result of the whole decipher process
@@ -74,7 +77,7 @@ cs_result_t* cs_auth_hybrid_encrypt(aes_ctx_t* aes_ctx, rsa_key_t sender_pub, rs
   memcpy(&(aes_params.key), aes_ctx->key, sizeof(aes_key_t));
 
   // Cipher AES params using reciever public key
-  rsa_result_t* rsa_result = rsa_encrypt(*(rec_pub.mod), *(rec_pub.exp), &aes_params, sizeof(aes_params));
+  rsa_result_t* rsa_result = rsa_encrypt(*(rec_pub.mod), *(rec_pub.exp), (u8*) &aes_params, sizeof(aes_params));
 
   // Cipher AGAIN using the sender private key
   rsa_result_t* rsa_result2 = rsa_encrypt(*(sender_sec.mod), *(sender_sec.exp), rsa_result->output, rsa_result->len);
@@ -128,7 +131,7 @@ cs_result_t* cs_auth_hybrid_decrypt(rsa_key_t rec_sec, const u8* crypt, size_t l
 
   // Decrypt AES message in the beginning of the cryptogram using the params provided
   size_t crypt_size = len - (RSA_MOD_LEN + RSA_PUB_LEN) - (n_blocks * n_len);
-  aes_ctx_t* aes_ctx = aes_128_ctx_init(aes_params.key, &(aes_params.iv), &(aes_params.nonce));
+  aes_ctx_t* aes_ctx = aes_128_ctx_init((aes_key_t*) aes_params.key, &(aes_params.iv), &(aes_params.nonce));
   aes_result_t* aes_result = aes_128_decrypt(aes_ctx, crypt, crypt_size);
 
   // Allocates memory to store the result of the whole decipher process

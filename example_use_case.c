@@ -26,7 +26,7 @@ int main(int argc, char** argv) {
   printf("    C = AES_k(M)\n\n");
 
   aes_ctx_t* aes_context = aes_128_ctx_init(NULL, NULL, NULL);
-  aes_result_t* aes_encrypt = aes_128_encrypt(aes_context, message, message_len);
+  aes_result_t* aes_encrypt = aes_128_encrypt(aes_context, (u8*) message, message_len);
   aes_result_t* aes_decrypt = aes_128_decrypt(aes_context, aes_encrypt->output, aes_encrypt->len);
   printf("AES 128 cipher result:\n");
   print_bytes(aes_encrypt->output, aes_encrypt->len);
@@ -51,7 +51,7 @@ int main(int argc, char** argv) {
 
   // Encrypt message using public key pair of user A
   aes_ctx_t* new_aes_context = aes_128_ctx_init(NULL, NULL, NULL);
-  cs_result_t* res2a = cs_hybrid_encrypt(new_aes_context, user_a->n, user_a->e, message, message_len);
+  cs_result_t* res2a = cs_hybrid_encrypt(new_aes_context, user_a->n, user_a->e, (u8*) message, message_len);
 
   printf("Encrypting message to user A:\n");
   print_bytes(res2a->output, res2a->len);
@@ -75,7 +75,7 @@ int main(int argc, char** argv) {
   printf("    C = (AES_k(M), RSA_KB_s(RSA_KA_p(k)), KB_p)\n\n");
 
   aes_ctx_t* newer_aes_context = aes_128_ctx_init(NULL, NULL, NULL);
-  cs_result_t* res3a = cs_auth_hybrid_encrypt(newer_aes_context, user_b->pub, user_b->sec, user_a->pub, message, message_len);
+  cs_result_t* res3a = cs_auth_hybrid_encrypt(newer_aes_context, user_b->pub, user_b->sec, user_a->pub, (u8*) message, message_len);
 
   printf("Encrypting message to user A:\n");
   print_bytes(res3a->output, res3a->len);
@@ -99,12 +99,11 @@ int main(int argc, char** argv) {
   printf("    Sign = (AES_k(M), RSA_KA_s(H(AES_k(M))), KB_p)\n\n");
 
   aes_ctx_t* final_aes_context = aes_128_ctx_init(NULL, NULL, NULL);
-  cs_result_t* res4 = cs_sign(final_aes_context, user_a->pub, user_a->sec, message, message_len);
+  cs_result_t* res4 = cs_sign(final_aes_context, user_a->pub, user_a->sec, (u8*) message, message_len);
 
   printf("Result of signature by user A:\n");
   print_bytes(res4->output, res4->len);
   printf("\n");
-
 
   /*
    * 4) Signing message: Sign = (AES_k(M), RSA_KA_s(H(AES_k(M))), KA_p) 
@@ -113,10 +112,14 @@ int main(int argc, char** argv) {
   printf("Verify signature:\n\n");
   printf("    RSA_KA_s (RSA_KA_s(H(AES_k(M)))) = H(AES_k(M))\n\n");
 
-  aes_result_t* aes_for_hash = aes_128_encrypt(final_aes_context, message, message_len);
+  aes_result_t* aes_for_hash = aes_128_encrypt(final_aes_context, (u8*) message, message_len);
   u8* expected_hash;
   sha3_256_wrapper(aes_for_hash->output, aes_for_hash->len, &expected_hash);
-  assert(cs_vrfy(expected_hash, res4->output, res4->len) == true);
+  if (cs_vrfy(expected_hash, res4->output, res4->len) == true) {
+    printf("PASSED\n\n");
+  } else {
+    printf("FAILED\n\n");
+  }
 
   cs_result_free(res4);
   sha3_256_free(expected_hash);
