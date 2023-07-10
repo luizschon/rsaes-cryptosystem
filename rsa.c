@@ -9,10 +9,9 @@
 #include "common.h"
 
 #define MILLER_RABIN_ITERATIONS 10
-#define RSA_KEY_SIZE 1024
 #define RSA_PUBLIC_EXP 65537
-#define SHA256_DIGEST_LEN 32
 #define MSB_FIRST 1
+#define LSB_FIRST -1
 
 static void rsa_oaep_sha256_encrypt(const mpz_t, const mpz_t, u8*, const u8*, size_t);
 static size_t rsa_oaep_sha256_decrypt(const mpz_t, const mpz_t, u8*, const u8*);
@@ -34,6 +33,9 @@ rsa_ctx_t* rsa_ctx_init() {
   }
   mpz_inits(context->n, context->e, context->d, NULL);
   gen_keys(context);
+  context->pub.mod = context->sec.mod = &(context->n);
+  context->pub.exp = &(context->e);
+  context->sec.exp = &(context->d);
 
   return context;
 }
@@ -54,9 +56,19 @@ void rsa_result_free(rsa_result_t* result) {
   }
 }
 
-rsa_result_t* rsa_encrypt(rsa_ctx_t* context, const u8* msg, size_t len) {
+void rsa_export_key(u8* buffer, rsa_key_t key) {
+  mpz_export(buffer, NULL, LSB_FIRST, sizeof(buffer[0]), 0, 0, *(key.mod));
+  mpz_export(buffer + RSA_MOD_LEN, NULL, LSB_FIRST, sizeof(buffer[0]), 0, 0, *(key.exp));
+}
+
+void rsa_import_key(mpz_t mod, mpz_t exp, const u8* buffer) {
+  mpz_import(mod, RSA_MOD_LEN, LSB_FIRST, sizeof(buffer[0]), 0, 0, buffer);
+  mpz_import(exp, RSA_PUB_LEN, LSB_FIRST, sizeof(buffer[0]), 0, 0, buffer + RSA_MOD_LEN);
+}
+
+rsa_result_t* rsa_encrypt(mpz_t mod, mpz_t exp, const u8* msg, size_t len) {
   size_t h_len = SHA256_DIGEST_LEN;
-  size_t n_len = sizeof_mpz(context->n);
+  size_t n_len = sizeof_mpz(mod);
   rsa_result_t* res = (rsa_result_t*) malloc_or_panic(sizeof(rsa_result_t));
 
   // Calculates number of blocks that will required to encrypt a message of size "len"
@@ -65,7 +77,7 @@ rsa_result_t* rsa_encrypt(rsa_ctx_t* context, const u8* msg, size_t len) {
   bool should_add_partial_block = (len % max_msg_len > 0);
   n_blocks += should_add_partial_block;
 
-  // Allocates memory to store the output in the result struct. Since the result of the RSA-OAEP
+  // Allocates memory to store the output in the result struct. Since the result of the RSA-tAEP
   // encryption is always the size in bytes of the RSA modulus, we can pre-compute the number of
   // bytes our output will have based on the number of "blocks" we'll need to form
   res->len = n_blocks * n_len;
@@ -75,16 +87,16 @@ rsa_result_t* rsa_encrypt(rsa_ctx_t* context, const u8* msg, size_t len) {
 
   // Cipher all blocks and save them contiguously in the result output
   for (size_t i = 0; i < n_blocks - 1; i++) {
-    rsa_oaep_sha256_encrypt(context->n, context->e, &(res->output[block_idx]), &msg[msg_idx], max_msg_len);
+    rsa_oaep_sha256_encrypt(mod, exp, &(res->output[block_idx]), &msg[msg_idx], max_msg_len);
     block_idx += n_len;
     msg_idx += max_msg_len;
   }
 
   // Cipher last block, whose message could be smaller than the max size of the message
   if (should_add_partial_block) {
-    rsa_oaep_sha256_encrypt(context->n, context->e, &(res->output[block_idx]), &msg[msg_idx], len % max_msg_len);
+    rsa_oaep_sha256_encrypt(mod, exp, &(res->output[block_idx]), &msg[msg_idx], len % max_msg_len);
   } else {
-    rsa_oaep_sha256_encrypt(context->n, context->e, &(res->output[block_idx]), &msg[msg_idx], max_msg_len);
+    rsa_oaep_sha256_encrypt(mod, exp, &(res->output[block_idx]), &msg[msg_idx], max_msg_len);
   }
 
 #ifndef NDEBUG
@@ -96,9 +108,9 @@ rsa_result_t* rsa_encrypt(rsa_ctx_t* context, const u8* msg, size_t len) {
   return res;
 }
 
-rsa_result_t* rsa_decrypt(rsa_ctx_t* context, const u8* crypt, size_t len) {
+rsa_result_t* rsa_decrypt(mpz_t mod, mpz_t exp, const u8* crypt, size_t len) {
   size_t h_len = SHA256_DIGEST_LEN;
-  size_t n_len = sizeof_mpz(context->n);
+  size_t n_len = sizeof_mpz(mod);
   rsa_result_t* res = (rsa_result_t*) malloc_or_panic(sizeof(rsa_result_t));
 
   // Calculates number of blocks that will required to decrypt the cryptogram (should be a multiple
@@ -115,7 +127,7 @@ rsa_result_t* rsa_decrypt(rsa_ctx_t* context, const u8* crypt, size_t len) {
 
   // Decipher all blocks and save them contiguously in the result output
   for (size_t i = 0; i < n_blocks; i++) {
-    size_t msg_len = rsa_oaep_sha256_decrypt(context->n, context->d, &(res->output[msg_idx]), &crypt[block_idx]);
+    size_t msg_len = rsa_oaep_sha256_decrypt(mod, exp, &(res->output[msg_idx]), &crypt[block_idx]);
     block_idx += n_len;
     msg_idx += msg_len;
   }

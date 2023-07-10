@@ -38,8 +38,8 @@ const u8 SBox[16][16] = {
 
 #ifndef NDEBUG
 const u8 test_k[AES_128_KEY_LEN] = { 0x76, 0x91, 0xBE, 0x03, 0x5E, 0x50, 0x20, 0xA8, 0xAC, 0x6E, 0x61, 0x85, 0x29, 0xF9, 0xA0, 0xDC };
-const u8 iv[8] = { 0x27, 0x77, 0x7F, 0x3F, 0x4A, 0x17, 0x86, 0xF0 };
-const u8 nonce[4] = { 0x00, 0xE0, 0x01, 0x7B };
+const u8 test_iv[8] = { 0x27, 0x77, 0x7F, 0x3F, 0x4A, 0x17, 0x86, 0xF0 };
+const u8 test_nonce[4] = { 0x00, 0xE0, 0x01, 0x7B };
 #endif
 
 // Private functions declarations
@@ -71,30 +71,40 @@ void aes_128_gen_key(u8* k) {
 #endif
 }
 
-aes_ctx_t* aes_128_ctx_init(aes_key_t key) {
-  aes_ctx_t* context = (aes_ctx_t*) malloc(sizeof(aes_ctx_t));
+aes_ctx_t* aes_128_ctx_init(aes_key_t* key, u64* iv, u32* nonce) {
+  aes_ctx_t* context = (aes_ctx_t*) malloc_or_panic(sizeof(aes_ctx_t));
 
-  if (context == NULL) {
-    fprintf(stderr, "ERROR: couldn't allocate memory for AES context\n");
-    return NULL;
+  if (key == NULL) {
+    aes_128_gen_key(context->key);
+  } else {
+    memcpy(context->key, key, AES_128_KEY_LEN);
   }
 
-  key_expansion(key, context->expanded_key, AES_128_N_RNDS);
-  
+  key_expansion(context->key, context->expanded_key, AES_128_N_RNDS);
+
+  if (iv == NULL) {
 #ifndef NDEBUG
-  memcpy(&(context->nonce), nonce, sizeof(nonce));
-  memcpy(&(context->iv), iv, sizeof(iv));
+    memcpy(&(context->iv), test_iv, sizeof(test_iv));
 #else
-  // Initialize "random" nonce and initialization vector and save it in the context for later decryption
-  gen_rand_bytes((u8*) &(context->nonce), sizeof(context->nonce));
-  gen_rand_bytes((u8*) &(context->iv), sizeof(context->iv));
+    gen_rand_bytes((u8*) &(context->iv), sizeof(context->iv));
 #endif
-  context->out_len = 0;
-  context->output = NULL;
+  } else {
+    context->iv = *iv;
+  }
+
+  if (nonce == NULL) {
+#ifndef NDEBUG
+    memcpy(&(context->nonce), test_nonce, sizeof(test_nonce));
+#else
+    gen_rand_bytes((u8*) &(context->nonce), sizeof(context->nonce));
+#endif
+  } else {
+    context->nonce = *nonce;
+  }
   
 #ifndef NDEBUG
   printf("Key: ");
-  print_bytes(key, AES_128_KEY_LEN);
+  print_bytes(context->key, sizeof(context->key));
   printf("\n");
   printf("Expanded key: ");
   print_words(context->expanded_key, sizeof(context->expanded_key) / WORD_LEN);
@@ -112,14 +122,20 @@ aes_ctx_t* aes_128_ctx_init(aes_key_t key) {
 
 void aes_128_ctx_free(aes_ctx_t* context) {
   if (context != NULL) {
-    if (context->output != NULL) {
-      free(context->output);
-    }
     free(context);
   }
 }
 
-void aes_128_encrypt(aes_ctx_t* context, const u8* input, size_t len) {
+void aes_res_free(aes_result_t* result) {
+  if (result != NULL) {
+    if (result->output != NULL) {
+      free(result->output);
+    }
+    free(result);
+  }
+}
+
+aes_result_t* aes_128_encrypt(aes_ctx_t* context, const u8* input, size_t len) {
 #ifndef NDEBUG
   printf("Input: ");
   print_bytes(input, len);
@@ -129,6 +145,7 @@ void aes_128_encrypt(aes_ctx_t* context, const u8* input, size_t len) {
   // Initialize counter block using nonce, initialization vector and counter
   aes_block_t ctr_block;
   init_counter_block(&ctr_block, context);
+  aes_result_t* res = (aes_result_t*) malloc_or_panic(sizeof(aes_result_t));
 
   // Compute number of blocks to be ciphered
   u32 last_block_len = (len % sizeof(aes_block_t) > 0);
@@ -137,24 +154,17 @@ void aes_128_encrypt(aes_ctx_t* context, const u8* input, size_t len) {
                                              // add another block with padding
 
   // Copy input into output to facilitate XOR operations with the cipher result
-  if (context->output == NULL) {
-    context->output = calloc(n_blocks * sizeof(aes_block_t), sizeof(u8));
-  }
-
-  if (context->output == NULL) {
-    fprintf(stderr, "ERROR: couldn't allocate memory for output stream\n");
-    return;
-  }
-  memcpy(context->output, input, len);
-  context->out_len = len;
+  res->len = len;
+  res->output = (u8*) malloc_or_panic(res->len);
+  memcpy(res->output, input, len);
   
-  // Operate over every block except the last, because it may need to be truncated
-  aes_block_t res; 
+  // Cipher each block
+  aes_block_t temp; 
   size_t block_idx = 0;
   for (size_t i = 0; i < n_blocks; i++) {
-    res = ctr_block;
-    cipher(&res, AES_128_N_RNDS, context->expanded_key);
-    xor_block_into_bytes(&(context->output[block_idx]), &res);
+    temp = ctr_block;
+    cipher(&temp, AES_128_N_RNDS, context->expanded_key);
+    xor_block_into_bytes(&(res->output[block_idx]), &temp);
     increment_counter(&ctr_block);
     block_idx += sizeof(aes_block_t);
 #ifndef NDEBUG
@@ -162,21 +172,23 @@ void aes_128_encrypt(aes_ctx_t* context, const u8* input, size_t len) {
     print_state(&ctr_block);
     printf("\n");
     printf("Key Stream (%ld):\n", i+1);
-    print_state(&res);
+    print_state(&temp);
     printf("\n");
 #endif
   }
   
 #ifndef NDEBUG
   printf("Output: ");
-  print_bytes(context->output, len);
+  print_bytes(res->output, len);
   printf("\n");
 #endif
+
+  return res;
 }
 
-void aes_128_decrypt(aes_ctx_t* context, const u8* input, size_t len) {
+aes_result_t* aes_128_decrypt(aes_ctx_t* context, const u8* input, size_t len) {
   // Since we are using CTR-mode, decryption trivial
-  aes_128_encrypt(context, input, len);
+  return aes_128_encrypt(context, input, len);
 }
 
 // Private function bodies
